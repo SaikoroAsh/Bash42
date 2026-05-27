@@ -78,6 +78,13 @@ gd()
 	git push
 }
 
+#gcp: Redirect your local repo to a a new remote 
+gcp()
+{
+	git remote remove origin && echo "Old remote deleted" || echo "Error: Suppression remote"
+	git remote add origin "$1" && echo "New remote added" || echo "Error: Add remote"
+	git push --set-upstream origin main && echo "Push done" || echo "Error: Push"
+}
 ### Bash42 ###
 ## All commands below are used for this project, please do not touch them
 unalias help42 2>/dev/null
