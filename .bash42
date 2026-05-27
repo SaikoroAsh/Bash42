@@ -14,7 +14,7 @@ alias a="./a.out"
 # p: Execute with python3
 alias p="python3"
 # ffp: Check .py with mypy and flake8
-alias ffp='flake8 --max-line-length=79; mypy --strict .'
+alias ffp='flake8 --max-line-length=79; mypy .'
 
 ### Git ###
 # gg: Add all the .c file of your directory and sub-directories to git and open a commit message window
