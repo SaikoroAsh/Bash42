@@ -78,7 +78,7 @@ gd()
 	git push
 }
 
-#gre: Relink your local repo to a a new remote 
+# gre: Relink your local repo to a a new remote 
 gre()
 {
 	git remote remove origin && echo "Old remote deleted" || echo "Error: Suppression remote"
