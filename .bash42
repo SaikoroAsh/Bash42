@@ -78,8 +78,8 @@ gd()
 	git push
 }
 
-#gcp: Redirect your local repo to a a new remote 
-gcp()
+#gre: Relink your local repo to a a new remote 
+gre()
 {
 	git remote remove origin && echo "Old remote deleted" || echo "Error: Suppression remote"
 	git remote add origin "$1" && echo "New remote added" || echo "Error: Add remote"
