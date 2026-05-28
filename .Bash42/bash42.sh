@@ -1,9 +1,10 @@
 ### Bash42 ###
 
-. ~/.Bash42/commands/git.sh
-. ~/.Bash42/commands/python.sh
-. ~/.Bash42/utils/welcome.sh
-. ~/.Bash42/utils/help.sh
+dir="$(dirname ${BASH_SOURCE[0]})"
+. "${dir}/commands/git.sh"
+. "${dir}/commands/python.sh"
+. "${dir}/utils/welcome.sh"
+. "${dir}/utils/help.sh"
 
 
 
