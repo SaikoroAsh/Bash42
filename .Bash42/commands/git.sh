@@ -17,6 +17,7 @@ alias gp="git push"
 
 alias gc="git clone"
 
+alias fdata='du -h /home/$USER | sort -hr | head -20'
 
 gcd()
 {
