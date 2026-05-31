@@ -1,6 +1,17 @@
 ### Git ###
 
-alias gg="find . -name '*.c' -exec git add {} ';' && git commit"
+gce()
+{
+        if [[ $# == 0 ]]; then
+                echo -e '\033[31mPlease specify a file extension like "c" "py"...\033[0m'
+        else
+                for arg in "$@"
+                do
+                        find . -name "*.$arg" -exec git add {} +
+                done
+                git commit
+        fi
+}
 
 
 alias gu="git add -u"
