@@ -1,6 +1,7 @@
 ### Git ###
 
-gce()
+unalias gg 2>/dev/null
+gg()
 {
         if [[ $# == 0 ]]; then
                 echo -e '\033[31mPlease specify a file extension like "c" "py"...\033[0m'

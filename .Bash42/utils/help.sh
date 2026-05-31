@@ -42,7 +42,7 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${WHITEB}[Git:]${CYAN}                                                                 ║"
     echo "  ║                                                                          ║"
-    echo -e "  ║   ${CYANB} gce  :${WHITE} Git add files of your directory and sub-directories by ${CYAN}        ║"
+    echo -e "  ║   ${CYANB} gg  :${WHITE} Git add files of your directory and sub-directories by ${CYAN}        ║"
     echo -e "  ║          ${WHITE} extensions and open a commit message window ${CYAN} ${UPDATED}         ║"
     echo -e "  ║   ${CYANB} gu   :${WHITE} Add all modified files${CYAN} ${NEW}                                   ║"
     echo -e "  ║   ${CYANB} gs   :${WHITE} Run git status${CYAN} ${NEW}                                           ║"
