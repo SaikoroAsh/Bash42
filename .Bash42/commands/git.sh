@@ -56,3 +56,75 @@ gre()
 	git remote add origin "$1" && echo "New remote added" || echo "Error: Add remote"
 	git push --set-upstream origin main && echo "Push done" || echo "Error: Push"
 }
+
+gbr() {
+    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+        echo "gbr: not a git repository" >&2
+        return 1
+    fi
+
+    local branches=($(git branch 2>/dev/null | sed "s/\* //"))
+
+    if [ ${#branches[@]} -eq 0 ]; then
+        echo "gbr: no branches yet (no commits)" >&2
+        return 1
+    fi
+
+    local current=$(git branch --show-current)
+    local selected=0
+    local count=${#branches[@]}
+
+    for i in "${!branches[@]}"; do
+        [[ "${branches[$i]}" == "$current" ]] && selected=$i
+    done
+
+    _gbr_cleanup() {
+        tput cnorm
+        trap - INT TERM EXIT
+    }
+
+    _gbr_draw() {
+        tput cuu "$count" 2>/dev/null || true
+        for i in "${!branches[@]}"; do
+            local marker="  "
+            [[ "${branches[$i]}" == "$current" ]] && marker="* "
+            if [ "$i" -eq "$selected" ]; then
+                echo -e "\e[7m > ${marker}${branches[$i]}\e[0m"
+            else
+                echo "   ${marker}${branches[$i]}"
+            fi
+        done
+    }
+
+    for i in "${!branches[@]}"; do
+        local marker="  "
+        [[ "${branches[$i]}" == "$current" ]] && marker="* "
+        if [ "$i" -eq "$selected" ]; then
+            echo -e "\e[7m > ${marker}${branches[$i]}\e[0m"
+        else
+            echo "   ${marker}${branches[$i]}"
+        fi
+    done
+
+    trap '_gbr_cleanup; return 130' INT
+    trap '_gbr_cleanup; return 143' TERM
+    trap '_gbr_cleanup' EXIT
+    tput civis
+
+    while IFS= read -rsn1 key; do
+        if [[ $key == $'\x1b' ]]; then
+            read -rsn2 key
+            case $key in
+                '[A') ((selected > 0)) && ((selected--)) ;;
+                '[B') ((selected < count - 1)) && ((selected++)) ;;
+            esac
+        elif [[ $key == '' ]]; then
+            break
+        fi
+        _gbr_draw
+    done
+
+    _gbr_cleanup
+    echo
+    git checkout "${branches[$selected]}"
+}
