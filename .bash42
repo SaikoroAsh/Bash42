@@ -78,12 +78,66 @@ gd()
 	git push
 }
 
-# gre: Relink your local repo to a a new remote 
+# gre: Relink your local repo to a a new remote
 gre()
 {
 	git remote remove origin && echo "Old remote deleted" || echo "Error: Suppression remote"
 	git remote add origin "$1" && echo "New remote added" || echo "Error: Add remote"
 	git push --set-upstream origin main && echo "Push done" || echo "Error: Push"
+}
+
+# gbr: Interface to navigate git branches
+gbr() {
+    local branches=($(git branch | sed "s/\* //"))
+    local current=$(git branch --show-current)
+    local selected=0
+    local count=${#branches[@]}
+
+    for i in "${!branches[@]}"; do
+        [[ "${branches[$i]}" == "$current" ]] && selected=$i
+    done
+
+    draw() {
+        tput cuu "$count" 2>/dev/null || true
+        for i in "${!branches[@]}"; do
+            local marker="  "
+            [[ "${branches[$i]}" == "$current" ]] && marker="* "
+            if [ "$i" -eq "$selected" ]; then
+                echo -e "\e[7m > ${marker}${branches[$i]}\e[0m"
+            else
+                echo "   ${marker}${branches[$i]}"
+            fi
+        done
+    }
+
+    for i in "${!branches[@]}"; do
+        local marker="  "
+        [[ "${branches[$i]}" == "$current" ]] && marker="* "
+        if [ "$i" -eq "$selected" ]; then
+            echo -e "\e[7m > ${marker}${branches[$i]}\e[0m"
+        else
+            echo "   ${marker}${branches[$i]}"
+        fi
+    done
+
+    tput civis
+
+    while IFS= read -rsn1 key; do
+        if [[ $key == $'\x1b' ]]; then
+            read -rsn2 key
+            case $key in
+                '[A') ((selected > 0)) && ((selected--)) ;;
+                '[B') ((selected < count - 1)) && ((selected++)) ;;
+            esac
+        elif [[ $key == '' ]]; then
+            break
+        fi
+        draw
+    done
+
+    tput cnorm
+    echo
+    git checkout "${branches[$selected]}"
 }
 ### Bash42 ###
 ## All commands below are used for this project, please do not touch them
@@ -98,7 +152,7 @@ unalias b42 2>/dev/null
 # b42: Update to the latest version
 b42()
 {
-	wget -q https://raw.githubusercontent.com/SaikoroAsh/Bash42/refs/heads/main/.bash42 -O ~/.bash42.tmp 
+	wget -q https://raw.githubusercontent.com/SaikoroAsh/Bash42/refs/heads/main/.bash42 -O ~/.bash42.tmp
 	if [[ $? == 0 ]]; then
 		dif=$(diff ~/.bash42 ~/.bash42.tmp | grep -B 1 '^> alias\|^> \S*(' | grep "^> #" | cut -c5- | sed -E 's/^(\S*):(.*)/New command: '$(echo -e '\033[1;31m')'\1'$(echo -e '\033[0m')':\2/')
 		if [[ -n $dif ]]; then
