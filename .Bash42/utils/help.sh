@@ -52,6 +52,7 @@ help42()
     echo -e "  ║   ${CYANB} gcd  :${WHITE} Git clone and go to the directory created${CYAN}                      ║"
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN} ${NEW}           ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN} ${NEW}                 ║"
+    echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${NEW}                              ║"
     echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${NEW}       ║"
 
 
