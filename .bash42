@@ -88,7 +88,18 @@ gre()
 
 # gbr: Interface to navigate git branches
 gbr() {
-    local branches=($(git branch | sed "s/\* //"))
+    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+        echo "gbr: not a git repository" >&2
+        return 1
+    fi
+
+    local branches=($(git branch 2>/dev/null | sed "s/\* //"))
+
+    if [ ${#branches[@]} -eq 0 ]; then
+        echo "gbr: no branches yet (no commits)" >&2
+        return 1
+    fi
+
     local current=$(git branch --show-current)
     local selected=0
     local count=${#branches[@]}
@@ -97,7 +108,12 @@ gbr() {
         [[ "${branches[$i]}" == "$current" ]] && selected=$i
     done
 
-    draw() {
+    _gbr_cleanup() {
+        tput cnorm
+        trap - INT TERM EXIT
+    }
+
+    _gbr_draw() {
         tput cuu "$count" 2>/dev/null || true
         for i in "${!branches[@]}"; do
             local marker="  "
@@ -120,6 +136,9 @@ gbr() {
         fi
     done
 
+    trap '_gbr_cleanup; return 130' INT
+    trap '_gbr_cleanup; return 143' TERM
+    trap '_gbr_cleanup' EXIT
     tput civis
 
     while IFS= read -rsn1 key; do
@@ -132,13 +151,14 @@ gbr() {
         elif [[ $key == '' ]]; then
             break
         fi
-        draw
+        _gbr_draw
     done
 
-    tput cnorm
+    _gbr_cleanup
     echo
     git checkout "${branches[$selected]}"
 }
+
 ### Bash42 ###
 ## All commands below are used for this project, please do not touch them
 unalias help42 2>/dev/null
