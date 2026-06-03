@@ -30,6 +30,8 @@ help42()
     echo -e "  ║   ${CYANB} vh  :${WHITE} Open vim with header 42 ${CYAN}                                        ║"
     echo -e "  ║   ${CYANB} a   :${WHITE} Execute the a.out file${CYAN}                                          ║"
     echo -e "  ║   ${CYANB} rv  :${WHITE} Checks multiple things to prepare for a review${CYAN}                  ║"
+    echo -e "  ║   ${CYANB} nav :${WHITE} Interactive directory navigator${CYAN}                                 ║"
+
 
 
     echo "  ║                                                                          ║"
