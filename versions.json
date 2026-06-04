@@ -1,0 +1,14 @@
+[
+    {
+        "version": "2.0.0",
+        "download_url": "test.zip",
+        "sha256": "abc",
+        "changelog": []
+    },
+    {
+        "version": "1.0.0",
+        "download_url": "",
+        "sha256": "",
+        "changelog": []
+    }
+]
