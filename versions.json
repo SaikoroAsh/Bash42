@@ -1,8 +1,8 @@
 [
     {
         "version": "2.0.0",
-        "download_url": "test.zip",
-        "sha256": "abc",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/untagged-cac0d82e808d6c5779e9/Bash42.zip",
+        "sha256": "f2d9009d8942dd5be2f98192b7a66abdc777bdc6a8cc33fd9988dfa6daa7d314",
         "changelog": []
     },
     {
