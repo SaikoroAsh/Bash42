@@ -6,9 +6,12 @@ b42()
 {
     # supprimer du bashrc
     curl -LO https://github.com/SaikoroAsh/Bash42/releases/latest/download/Bash42.zip \
-      && unzip Bash42.zip -d ~ \
-      && echo ". ~/.Bash42/bash42.sh" >> ~/.bashrc \
-      && source ~/.bashrc \
-      && rm -f ~/.bash42 \
-      && help42
+        && unzip Bash42.zip -d ~ \
+        && rm Bash42.zip \
+        && rm -f ~/.bash42 \
+        && echo ". ~/.Bash42/bash42.sh" >> ~/.bashrc \
+        && sed '/\. ~\/\.bash42/d' ~/.bashrc > ~/.bashtmp && mv ~/.bashtmp ~/.bashrc \
+        && source ~/.bashrc \
+        && help42 \
+        || echo "There was an error trying to update."
 }
