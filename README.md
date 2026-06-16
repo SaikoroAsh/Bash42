@@ -6,13 +6,11 @@ If this is your first download, run this:
 
 For bash users :
 ```sh
-wget https://raw.githubusercontent.com/SaikoroAsh/Bash42/refs/heads/main/.bash42 -O ~/.bash42
-echo ". ~/.bash42" >> ~/.bashrc && source ~/.bashrc
+curl -LO https://github.com/SaikoroAsh/Bash42/releases/latest/download/Bash42.zip && unzip Bash42.zip -d ~ && echo ". ~/.Bash42/bash42.sh" >> ~/.bashrc && source ~/.bashrc
 ```
 For zsh users :
 ```sh
-wget https://raw.githubusercontent.com/SaikoroAsh/Bash42/refs/heads/main/.bash42 -O ~/.bash42
-echo ". ~/.bash42" >> ~/.zshrc && source ~/.zshrc
+curl -LO https://github.com/SaikoroAsh/Bash42/releases/latest/download/Bash42.zip && unzip Bash42.zip -d ~ && echo ". ~/.Bash42/bash42.sh" >> ~/.zshrc && source ~/.zshrc
 ```
 After your first download, you can run this command to update to the last version:
 

@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 
-from typing import Any
+from typing import Any, IO
+from pathlib import Path
+
+import os
 import hashlib
 import json
 import sys
 import urllib.request
-import urllib.parse
-from pathlib import Path
+import zipfile
+import shutil
+import tempfile
 
 
 CURRENT_DIR = Path(__file__).parent
 CONFIG_FILE = f"{CURRENT_DIR}/../config.json"
+INSTALL_PATH = CURRENT_DIR.parent
 
 
 def load_config() -> Any:
@@ -32,22 +37,20 @@ def parse_version(version: str) -> tuple[int, int, int]:
     return (parts[0], parts[1], parts[2])
 
 
-def sha256_file(file_path: str) -> str:
-    with open(file_path, "rb") as f:
-        return hashlib.file_digest(f, "sha256").hexdigest()
+def sha256_file(file: IO[bytes]) -> str:
+    file.seek(0)
+    return hashlib.file_digest(file, "sha256").hexdigest()  # pyright: ignore
 
 
-def download_file(url: str, destination: str) -> None:
-    with urllib.request.urlopen(url) as response, open(destination, "wb") as f:
+def download_file(url: str, dest: IO[bytes]) -> None:
+    with urllib.request.urlopen(url) as response:
         while chunk := response.read(65536):
             if not chunk:
                 break
-            f.write(chunk)
+            dest.write(chunk)
 
 
-def download() -> None:
-    config = load_config()
-
+def download(dest: IO[bytes], config: Any) -> bool:
     versions_url = config["versions_url"]
     current_version = config["version"]
 
@@ -62,40 +65,68 @@ def download() -> None:
 
     if parse_version(current_version) >= parse_version(latest_version):
         print(f"Already up to date ({current_version}).")
-        return
+        return False
 
     print(f"Update available: {current_version} -> {latest_version}")
 
     download_url: str = latest["download_url"]
     expected_sha256: str = latest["sha256"].lower()
 
-    # Remove this line for release
-    download_url = "http://127.0.0.1:8000/Bash42.zip"
+    download_file(download_url, dest)
 
-    filename = Path(urllib.parse.urlsplit(download_url).path).name
-
-    download_file(download_url, filename)
-
-    actual_sha256 = sha256_file(filename)
+    actual_sha256 = sha256_file(dest)
 
     if actual_sha256 != expected_sha256:
-        Path(filename).unlink(missing_ok=True)
-        raise Exception("sha256 does not match.")
+        dest.close()
+        raise Exception("sha256 does not match. "
+                        f"(Expected: {expected_sha256}, Got: {actual_sha256}")
 
-    print(f"Downloaded update to: {filename}")
+    if latest["changelog"]:
+        print("Changelog:")
+        for line in latest["changelog"]:
+            print(f" - {line}")
+    else:
+        print("No changelog")
+
+    return True
 
 
-def install() -> None:
-    pass
+def install(zip_path: str, config: Any) -> None:
+    install_dir = Path(os.path.expanduser(INSTALL_PATH))
+    install_dir.mkdir(exist_ok=True)
+
+    with (zipfile.ZipFile(zip_path, "r") as z,
+          tempfile.TemporaryDirectory() as tmp_dirname):
+        tmp_dir = Path(tmp_dirname)
+        z.extractall(tmp_dir)
+
+        extracted = list(tmp_dir.iterdir())
+        if not extracted:
+            raise Exception("ZIP file is empty.")
+
+        source = extracted[0]
+
+        for item in source.iterdir():
+            dest = install_dir / item.name
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            shutil.move(str(item), str(dest))
+
+    print("Installation complete.")
 
 
 def main():
-    download()
-    install()
+    config = load_config()
+    with tempfile.NamedTemporaryFile() as zipfile:
+        if download(zipfile, config):
+            install(zipfile.name, config)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        print("Unable to update due to an error.", file=sys.stderr)
+    except Exception as e:
+        print(f"Unable to update due to an error: {e}", file=sys.stderr)
