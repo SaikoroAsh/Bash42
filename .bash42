@@ -1,0 +1,14 @@
+##### V1 to V2 MIGRATION #####
+
+unalias b42 2>/dev/null
+
+b42()
+{
+    # supprimer du bashrc
+    curl -LO https://github.com/SaikoroAsh/Bash42/releases/latest/download/Bash42.zip \
+      && unzip Bash42.zip -d ~ \
+      && echo ". ~/.Bash42/bash42.sh" >> ~/.bashrc \
+      && source ~/.bashrc \
+      && rm -f ~/.bash42 \
+      && help42
+}
