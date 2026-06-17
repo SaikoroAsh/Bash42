@@ -4,42 +4,17 @@ from typing import Any, IO
 from pathlib import Path
 
 import os
-import hashlib
-import json
 import sys
 import urllib.request
 import zipfile
 import shutil
 import tempfile
 
+from utils import load_config, fetch_json, parse_version, sha256_file
+
 
 CURRENT_DIR = Path(__file__).parent
-CONFIG_FILE = f"{CURRENT_DIR}/../config.json"
 INSTALL_PATH = CURRENT_DIR.parent
-
-
-def load_config() -> Any:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def fetch_json(url: str) -> Any:
-    with urllib.request.urlopen(url) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def parse_version(version: str) -> tuple[int, int, int]:
-    parts: list[int] = [int(part) for part in version.split(".")]
-
-    if len(parts) != 3:
-        raise Exception(f"Version number {version} could not be parsed.")
-
-    return (parts[0], parts[1], parts[2])
-
-
-def sha256_file(file: IO[bytes]) -> str:
-    file.seek(0)
-    return hashlib.file_digest(file, "sha256").hexdigest()  # pyright: ignore
 
 
 def download_file(url: str, dest: IO[bytes]) -> None:
