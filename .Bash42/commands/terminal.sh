@@ -1,23 +1,20 @@
 ### Terminal ###
 
 nav() {
-	# ── Colors & styles ──────────────────────────────────────────
 	local C_RESET="\033[0m"
-	local C_DIR="\033[1;36m"      # Bold cyan  → directories
-	local C_FILE="\033[0;37m"     # Light grey → regular files
-	local C_SEL="\033[7;36m"      # Reverse cyan → selected item
-	local C_PATH="\033[1;33m"     # Yellow → breadcrumb
-	local C_HINT="\033[2;37m"     # Dim grey → keybinds hint
-	local C_EMPTY="\033[2;31m"    # Dim red → empty dir message
-	local C_SCROLL="\033[2;36m"   # Dim cyan → scroll indicator
+	local C_DIR="\033[1;36m"
+	local C_FILE="\033[0;37m"
+	local C_SEL="\033[7;36m"
+	local C_PATH="\033[1;33m"
+	local C_HINT="\033[2;37m"
+	local C_EMPTY="\033[2;31m"
+	local C_SCROLL="\033[2;36m"
 
-	# ── State ────────────────────────────────────────────────────
 	local current_dir
 	current_dir="$(pwd)"
 	local selected=0
 	local show_hidden=0
 
-	# ── Cleanup: always restore cursor & terminal on exit ────────
 	_nav_cleanup() {
 		tput cnorm
 		tput rmcup
@@ -26,11 +23,24 @@ nav() {
 	trap '_nav_cleanup' EXIT INT TERM
 	trap '' INT
 
-	# ── Init alternate screen ────────────────────────────────────
+	# ── NOUVEAU : ouvre avec la bonne app ────────────────────────
+	_nav_open() {
+		local file="$1"
+		local ext="${file##*.}"
+		case "$ext" in
+			sh|bash|zsh|py|js|ts|json|yaml|yml|toml|conf|cfg|ini|\
+			txt|md|rst|csv|log|env|gitignore|dockerfile)
+				vim "$file"
+				;;
+			*)
+				xdg-open "$file" &>/dev/null &
+				;;
+		esac
+	}
+
 	tput smcup
 	tput civis
 
-	# ── Helper: build entry list ──────────────────────────────────
 	_nav_list() {
 		local dir="$1"
 		local f
@@ -45,7 +55,6 @@ nav() {
 		)
 	}
 
-	# ── Helper: draw UI with viewport ────────────────────────────
 	_nav_draw() {
 		local dir="$1"
 		local sel="$2"
@@ -57,18 +66,16 @@ nav() {
 
 		tput clear
 
-		# — Header (3 lines) —
 		printf "${C_PATH}  %s${C_RESET}\n" "$dir"
-		printf "${C_HINT}  [↑↓: Navigate]  [→: Enter dir]  [←: Parent]  [Enter: Cd here]  [h: Show hidden]  [q: Quit]${C_RESET}\n"
+		# ── NOUVEAU : hint mis à jour avec c et x ────────────────
+		printf "${C_HINT}  [↑↓: Navigate]  [→: Enter dir]  [←: Parent]  [Enter: Cd here]  [c: VS Code]  [x: Exécuter]  [h: Hidden]  [q: Quit]${C_RESET}\n"
 		echo ""
 
-		# — Empty dir —
 		if [[ "$count" -eq 0 ]]; then
 			printf "  ${C_EMPTY}(empty directory)${C_RESET}\n"
 			return
 		fi
 
-		# — Visible entries —
 		local i name base label
 		local end=$(( viewport_start + viewport_size ))
 		[[ "$end" -gt "$count" ]] && end="$count"
@@ -94,13 +101,11 @@ nav() {
 			fi
 		done
 
-		# — Scroll indicator (bottom) —
 		if [[ "$count" -gt "$viewport_size" ]]; then
 			printf "\n  ${C_SCROLL}[ %d / %d ]${C_RESET}\n" "$(( sel + 1 ))" "$count"
 		fi
 	}
 
-	# ── Main loop ─────────────────────────────────────────────────
 	local -a entries
 	local key esc_seq
 	local viewport_start=0
@@ -109,18 +114,14 @@ nav() {
 		mapfile -t entries < <(_nav_list "$current_dir")
 		local count="${#entries[@]}"
 
-		# Clamp selection
 		[[ "$count" -eq 0 ]] && selected=0
 		[[ "$selected" -ge "$count" && "$count" -gt 0 ]] && selected=$(( count - 1 ))
 
-		# Compute viewport
-		# Header = 3 lines, scroll indicator = 2 lines → reserve 5
 		local term_lines
 		term_lines="$(tput lines)"
 		local viewport_size=$(( term_lines - 5 ))
 		[[ "$viewport_size" -lt 1 ]] && viewport_size=1
 
-		# Scroll viewport to follow selection
 		if [[ "$selected" -lt "$viewport_start" ]]; then
 			viewport_start="$selected"
 		elif [[ "$selected" -ge $(( viewport_start + viewport_size )) ]]; then
@@ -130,7 +131,6 @@ nav() {
 		_nav_draw "$current_dir" "$selected" "$count" \
 			"$viewport_start" "$viewport_size" "${entries[@]}"
 
-		# Read keypress
 		IFS= read -r -s -n1 key
 
 		if [[ "$key" == $'\x1b' ]]; then
@@ -138,15 +138,15 @@ nav() {
 			if [[ "$esc_seq" == '[' ]]; then
 				IFS= read -r -s -n1 -t 0.1 esc_seq
 				case "$esc_seq" in
-					A)  # ↑
+					A)
 						[[ "$selected" -gt 0 ]] && (( selected-- ))
 						continue
 						;;
-					B)  # ↓
+					B)
 						[[ "$count" -gt 0 && "$selected" -lt $(( count - 1 )) ]] && (( selected++ ))
 						continue
 						;;
-					C)  # → enter dir
+					C)
 						if [[ "$count" -gt 0 && -d "${entries[$selected]}" ]]; then
 							current_dir="${entries[$selected]}"
 							selected=0
@@ -154,7 +154,7 @@ nav() {
 						fi
 						continue
 						;;
-					D)  # ← parent
+					D)
 						local parent
 						parent="$(dirname "$current_dir")"
 						if [[ "$parent" != "$current_dir" ]]; then
@@ -166,7 +166,6 @@ nav() {
 						;;
 				esac
 			else
-				# ESC → quit
 				_nav_cleanup
 				trap - EXIT INT TERM
 				return 0
@@ -184,6 +183,47 @@ nav() {
 				selected=0
 				viewport_start=0
 				;;
+
+			# ── NOUVEAU : touche c → VS Code ─────────────────────
+			c|C)
+				if [[ "$count" -gt 0 ]]; then
+					local open_path
+					if [[ -d "${entries[$selected]}" ]]; then
+						open_path="${entries[$selected]}"
+					else
+						open_path="$current_dir"
+					fi
+					_nav_cleanup
+					trap - EXIT INT TERM
+					code "$open_path" &>/dev/null &
+				fi
+				return 0
+				;;
+
+			# ── NOUVEAU : touche x → exécuter ────────────────────
+			x|X)
+				if [[ "$count" -gt 0 && ! -d "${entries[$selected]}" ]]; then
+					local target="${entries[$selected]}"
+					local ext="${target##*.}"
+					local cmd
+					if [[ "$ext" == "py" ]]; then
+						cmd="python3 \"$target\""
+					else
+						cmd="\"$target\""
+					fi
+					tput rmcup
+					tput cnorm
+					printf "Exécuter: %s " "$cmd"
+					local extra_args
+					IFS= read -r extra_args
+					eval "$cmd $extra_args"
+					printf "\n[Terminé — appuie sur Entrée]"
+					read -r
+					tput smcup
+					tput civis
+				fi
+				;;
+
 			'')  # Enter
 				if [[ "$count" -eq 0 ]]; then
 					_nav_cleanup
@@ -199,9 +239,10 @@ nav() {
 					cd "$target" || return
 					return 0
 				else
+					# ── MODIFIÉ : _nav_open au lieu de vim ───────
 					_nav_cleanup
 					trap - EXIT INT TERM
-					vim "$target"
+					_nav_open "$target"
 					cd "$current_dir" || return
 					return 0
 				fi
