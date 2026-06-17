@@ -1,5 +1,13 @@
 [
     {
+        "version": "2.0.2",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.0.2/Bash42.zip",
+        "sha256": "c727f80d431c9a0b48944f601fd435001339c3bb1134cfce34cf2f64faf8660a",
+        "changelog": [
+            "Fixed Help42"
+        ]
+    },
+    {
         "version": "2.0.1",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.0.1/Bash42.zip",
         "sha256": "ebd2456d734aff6113361c36db8332c0578a43035079c8ed5715408dda5c64f5",
