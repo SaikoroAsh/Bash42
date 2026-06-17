@@ -10,7 +10,7 @@ import zipfile
 import shutil
 import tempfile
 
-from utils import load_config, fetch_json, parse_version, sha256_file
+from utils import load_json, fetch_json, parse_version, sha256_file
 
 
 CURRENT_DIR = Path(__file__).parent
@@ -94,7 +94,7 @@ def install(zip_path: str, config: Any) -> None:
 
 
 def main():
-    config = load_config()
+    config = load_json(f"{INSTALL_PATH}/config.json")
     with tempfile.NamedTemporaryFile() as zipfile:
         if download(zipfile, config):
             install(zipfile.name, config)

@@ -47,7 +47,7 @@ def create_zip(bash_dir: str) -> str:
 
 
 def update_versions(version: str, archive: str, dest_dir: Path) -> None:
-    versions_filename = str(INSTALL_PATH.parent / "versions.json")
+    versions_filename = str(dest_dir / "versions.json")
     versions: list[Any] = load_json(versions_filename)
     zip_url: str = "https://github.com/"\
         f"SaikoroAsh/Bash42/releases/download/v{version}/Bash42.zip"
