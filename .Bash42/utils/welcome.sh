@@ -29,7 +29,7 @@ welcomebash42()
     echo "  ║                                                                          ║"
 
     echo "  ╚══════════════════════════════════════════════════════════════════════════╝"
-    echo -e "                       ${WHITE} by: SaikoroAsh & osavarin & LMuny ${CYAN}                    "
+    echo -e "                     ${WHITE} by: SaikoroAsh & osavarin & LMuny ${CYAN}                      "
 
     echo -e "${RESET}"
 }

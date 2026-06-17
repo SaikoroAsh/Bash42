@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        ".Bash42/py_commands",
+    ]
+}

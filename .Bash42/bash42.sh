@@ -3,6 +3,8 @@
 dir="$(dirname ${BASH_SOURCE[0]})"
 . "${dir}/commands/git.sh"
 . "${dir}/commands/python.sh"
+. "${dir}/commands/c.sh"
+. "${dir}/commands/terminal.sh"
 . "${dir}/utils/welcome.sh"
 . "${dir}/utils/help.sh"
 
@@ -13,7 +15,7 @@ dir="$(dirname ${BASH_SOURCE[0]})"
 b42()
 {
     welcomebash42
-	python ~/.Bash42/py_commands/b42.py
+	python ~/.Bash42/py_commands/b42.py && source ~/.Bash42/bash42.sh
 }
 
 
@@ -22,4 +24,9 @@ sl()
 	qr https://github.com/SaikoroAsh/Bash42
 	echo "It's always a good time to advertise :)"
 	echo "Type better next time"
+}
+
+create-version-b42()
+{
+	python ~/.Bash42/py_commands/create_version_b42.py
 }

@@ -1,5 +1,5 @@
-help42()
-{
+# help42()
+# {
     # Colors
     WHITEB='\033[1;37m'
     CYAN='\033[0;36m'
@@ -44,7 +44,7 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${WHITEB}[Git:]${CYAN}                                                                 ║"
     echo "  ║                                                                          ║"
-    echo -e "  ║   ${CYANB} gg  :${WHITE} Git add files of your directory and sub-directories by ${CYAN}        ║"
+    echo -e "  ║   ${CYANB} gg  :${WHITE} Git add files of your directory and sub-directories by ${CYAN}         ║"
     echo -e "  ║          ${WHITE} extensions and open a commit message window ${CYAN} ${UPDATED}         ║"
     echo -e "  ║   ${CYANB} gu   :${WHITE} Add all modified files${CYAN} ${NEW}                                   ║"
     echo -e "  ║   ${CYANB} gs   :${WHITE} Run git status${CYAN} ${NEW}                                           ║"
@@ -69,4 +69,4 @@ help42()
     echo "  ║                                                                          ║"
     echo "  ╚══════════════════════════════════════════════════════════════════════════╝"
     echo -e "${RESET}"
-}
+#}
