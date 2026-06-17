@@ -2,8 +2,7 @@
     {
         "version": "2.0.2",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.0.2/Bash42.zip",
-        "sha256": "dc26d08eb92e2f938eead36c797b2e801115c6cb5c5fde3d1525037c29ed8054",
-        		
+        "sha256": "c727f80d431c9a0b48944f601fd435001339c3bb1134cfce34cf2f64faf8660a",
         "changelog": [
             "Fixed Help42"
         ]

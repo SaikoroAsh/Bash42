@@ -8,17 +8,14 @@ import os
 import shutil
 
 from utils import (
-    load_config,
     parse_version,
-    save_config,
     load_json,
     save_json,
     sha256_file
 )
 
 
-CURRENT_DIR = Path(__file__).parent
-INSTALL_PATH = CURRENT_DIR.parent
+INSTALL_PATH = Path(__file__).parent.parent
 
 
 def ask_version(current: str) -> tuple[int, int, int]:
@@ -49,8 +46,8 @@ def create_zip(bash_dir: str) -> str:
     return shutil.make_archive(zip_name, "zip", base_dir=bash_dir)
 
 
-def update_versions(version: str, archive: str) -> None:
-    versions_filename = (INSTALL_PATH.parent / "versions.json").name
+def update_versions(version: str, archive: str, dest_dir: Path) -> None:
+    versions_filename = str(INSTALL_PATH.parent / "versions.json")
     versions: list[Any] = load_json(versions_filename)
     zip_url: str = "https://github.com/"\
         f"SaikoroAsh/Bash42/releases/download/v{version}/Bash42.zip"
@@ -74,14 +71,15 @@ def update_versions(version: str, archive: str) -> None:
         "changelog": changelog
     })
 
-    save_json(versions, versions_filename)
+    save_json(versions, str(dest_dir / "versions.json"))
 
 
 def main():
-    config = load_config()
     cwd: str = os.getcwd()
     print("Creating new Bash42 version...")
     bash_dir = Path(cwd) / ".Bash42"
+    print(str(bash_dir / "config.json"))
+    config = load_json(str(bash_dir / "config.json"))
     if not bash_dir.is_dir():
         raise Exception(f"Error: {bash_dir.absolute()} does not exist or is "
               "not a directory.")
@@ -90,15 +88,15 @@ def main():
 
     print("Updating config.json...", end="", flush=True)
     config["version"] = ".".join([str(i) for i in new_version])
-    save_config(config)
+    save_json(config, str(bash_dir / "config.json"))
     print(" done.")
 
     print("Creating archive...", end="", flush=True)
-    archive: str = create_zip(bash_dir.absolute().name)
+    archive: str = create_zip(str(bash_dir))
     print(" done.")
 
     print("Updating versions.json...", end="", flush=True)
-    update_versions(config["version"], archive)
+    update_versions(config["version"], archive, bash_dir.parent)
     print(" done.")
 
     print(f"Successfully created archive {archive}")

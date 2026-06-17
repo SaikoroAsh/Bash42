@@ -1,12 +1,8 @@
 from typing import Any, IO
-from pathlib import Path
 
 import json
 import urllib.request
 import hashlib
-
-CURRENT_DIR = Path(__file__).parent
-CONFIG_FILE = f"{CURRENT_DIR}/../config.json"
 
 
 def load_json(filename: str) -> Any:
@@ -17,14 +13,6 @@ def load_json(filename: str) -> Any:
 def save_json(data: Any, filename: str) -> None:
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
-
-
-def load_config() -> Any:
-    return load_json(CONFIG_FILE)
-
-
-def save_config(config: Any) -> None:
-    save_json(config, CONFIG_FILE)
 
 
 def fetch_json(url: str) -> Any:
