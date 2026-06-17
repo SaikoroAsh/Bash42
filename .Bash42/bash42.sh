@@ -3,6 +3,8 @@
 dir="$(dirname ${BASH_SOURCE[0]})"
 . "${dir}/commands/git.sh"
 . "${dir}/commands/python.sh"
+. "${dir}/commands/c.sh"
+. "${dir}/commands/terminal.sh"
 . "${dir}/utils/welcome.sh"
 . "${dir}/utils/help.sh"
 
