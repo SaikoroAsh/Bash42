@@ -13,5 +13,5 @@ b42()
         && sed '/\. ~\/\.bash42/d' ~/.bashrc > ~/.bashtmp && mv ~/.bashtmp ~/.bashrc \
         && source ~/.bashrc \
         && help42 \
-        || echo "There was an error trying to update!"
+        || echo "There was an error trying to update."
 }
