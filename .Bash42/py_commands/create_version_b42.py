@@ -92,7 +92,7 @@ def main():
     print(" done.")
 
     print("Creating archive...", end="", flush=True)
-    archive: str = create_zip(str(bash_dir))
+    archive: str = create_zip(bash_dir.name)
     print(" done.")
 
     print("Updating versions.json...", end="", flush=True)
