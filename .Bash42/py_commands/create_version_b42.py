@@ -22,8 +22,8 @@ def ask_version(current: str) -> tuple[int, int, int]:
     version = parse_version(current)
     choices: list[str] = [
         f"{version[0]}.{version[1]}.{version[2] + 1}",
-        f"{version[0]}.{version[1] + 1}.{version[2]}",
-        f"{version[0] + 1}.{version[1]}.{version[2]}"
+        f"{version[0]}.{version[1] + 1}.{0}",
+        f"{version[0] + 1}.{0}.{0}"
     ]
     print(f"Current version is v{current}.")
     for i, c in enumerate(choices):
@@ -82,7 +82,7 @@ def main():
     config = load_json(str(bash_dir / "config.json"))
     if not bash_dir.is_dir():
         raise Exception(f"Error: {bash_dir.absolute()} does not exist or is "
-              "not a directory.")
+                        "not a directory.")
 
     new_version = ask_version(config["version"])
 
