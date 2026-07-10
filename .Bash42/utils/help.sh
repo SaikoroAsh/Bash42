@@ -25,20 +25,18 @@ help42()
     echo -e "  ║   ${WHITEB}[C Editor & Compilation:]${CYAN}                                              ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} ccw :${WHITE} Compile with all moulinette flags${CYAN}                               ║"
-    echo -e "  ║   ${CYANB} ff  :${WHITE} Run the norminette ${CYAN}                                             ║"
+    echo -e "  ║   ${CYANB} ff  :${WHITE} Run the norminette $  ║   [Bash42:]                                                              ║{CYAN}                                             ║"
     echo -e "  ║   ${CYANB} v   :${WHITE} Open vim ${CYAN}                                                       ║"
     echo -e "  ║   ${CYANB} vh  :${WHITE} Open vim with header 42 ${CYAN}                                        ║"
     echo -e "  ║   ${CYANB} a   :${WHITE} Execute the a.out file${CYAN}                                          ║"
     echo -e "  ║   ${CYANB} rv  :${WHITE} Checks multiple things to prepare for a review${CYAN}                  ║"
-    echo -e "  ║   ${CYANB} nav :${WHITE} Interactive directory navigator${CYAN}                                 ║"
-
 
 
     echo "  ║                                                                          ║"
     echo -e "  ║   ${WHITEB}[Python:]${CYAN}                                                              ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} p   :${WHITE} Execute with python3${CYAN}                                            ║"
-    echo -e "  ║   ${CYANB} ffp :${WHITE} Check .py with mypy and flake8${CYAN} ${NEW}                            ║"
+    echo -e "  ║   ${CYANB} ffp :${WHITE} Check .py with mypy and flake8${CYAN}                                  ║"
 
 
     echo "  ║                                                                          ║"
@@ -55,7 +53,14 @@ help42()
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN} ${NEW}           ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN} ${NEW}                 ║"
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${NEW}                              ║"
-    echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${NEW}       ║"
+
+    echo "  ║                                                                          ║"
+    echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}        ║   [Bash42:]                                                              ║                                            ║"
+    echo "  ║                                                                          ║"
+    echo -e "  ║   ${CYANB} nav  :${WHITE} Interactive directory navigator${CYAN}                                ║"
+    echo -e "  ║   ${CYANB} iph  :${WHITE} Analyzes an IP/mask (network, broadcast, host range${CYAN} ${NEW}      ║"
+    echo -e "  ║   ${CYANB} mask :${WHITE}  reference table of all /1-/32 subnet masks.${CYAN} ${NEW}             ║"
+    echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${UPDATED}   ║"
 
 
     echo -e "  ║                                                                          ║"
