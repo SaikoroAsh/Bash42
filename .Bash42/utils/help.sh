@@ -25,7 +25,7 @@ help42()
     echo -e "  ║   ${WHITEB}[C Editor & Compilation:]${CYAN}                                              ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} ccw :${WHITE} Compile with all moulinette flags${CYAN}                               ║"
-    echo -e "  ║   ${CYANB} ff  :${WHITE} Run the norminette $  ║   [Bash42:]                                                              ║{CYAN}                                             ║"
+    echo -e "  ║   ${CYANB} ff  :${WHITE} Run the norminette ${CYAN}                                             ║"
     echo -e "  ║   ${CYANB} v   :${WHITE} Open vim ${CYAN}                                                       ║"
     echo -e "  ║   ${CYANB} vh  :${WHITE} Open vim with header 42 ${CYAN}                                        ║"
     echo -e "  ║   ${CYANB} a   :${WHITE} Execute the a.out file${CYAN}                                          ║"
@@ -55,7 +55,7 @@ help42()
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${NEW}                              ║"
 
     echo "  ║                                                                          ║"
-    echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}        ║   [Bash42:]                                                              ║                                            ║"
+    echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}                                                  ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} nav  :${WHITE} Interactive directory navigator${CYAN}                                ║"
     echo -e "  ║   ${CYANB} iph  :${WHITE} Analyzes an IP/mask (network, broadcast, host range${CYAN} ${NEW}      ║"
