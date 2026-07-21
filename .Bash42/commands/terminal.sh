@@ -297,7 +297,13 @@ nav() {
 
 		# ── Compteur scroll ───────────────────────────────────────
 		if [[ "$count" -gt "$viewport_size" ]]; then
+<<<<<<< HEAD
 			printf "\n  ${C_SCROLL}[ %d / %d ]${C_RESET}${EL}\n" "$(( sel + 1 ))" "$count"
+=======
+			printf "  ${C_SCROLL}[ %d / %d ]${C_RESET}${EL}\n" "$(( sel + 1 ))" "$count"
+		else
+			printf "${EL}\n"
+>>>>>>> v.2.1.1
 		fi
 
 		# Nettoie tout résidu sous le curseur si le contenu précédent
@@ -465,8 +471,17 @@ nav() {
 					eval "$cmd $extra_args"
 					printf "\n[Terminé — appuie sur Entrée]"
 					read -r
+					stty echo 2>/dev/null
 					tput smcup
 					tput civis
+
+					# Force a full redraw after returning from command execution.
+					need_relist=1
+					cache_dir=""
+					cache_selected=-1
+					cache_viewport=-1
+					cache_cols=-1
+					cache_lines=-1
 				fi
 				;;
 			'')  # Enter
@@ -766,7 +781,11 @@ mask() {
     _nl_title "IPH - Subnet mask reference table"
     _nl_sep
     printf "${_nl_cyan}|${_nl_reset} ${_nl_bold}%-6s %-17s %-12s %-16s %-14s${_nl_reset}%*s${_nl_cyan}|${_nl_reset}\n" \
+<<<<<<< HEAD
         "CIDR" "Mask" "Hex" "Wildcard" "Hosts" 7 ""
+=======
+        "CIDR" "Mask" "Hex" "Wildcard" "Hosts" 10 ""
+>>>>>>> v.2.1.1
     _nl_sep
     local c m_int wc_int hosts
     for c in $(seq 1 32); do
@@ -775,7 +794,11 @@ mask() {
         if (( c >= 31 )); then hosts=$(( c==32 ? 1 : 2 )); else hosts=$(( (1<<(32-c))-2 )); fi
         printf "${_nl_cyan}|${_nl_reset} %-6s %-17s %-12s %-16s %-14s%*s${_nl_cyan}|${_nl_reset}\n" \
             "/$c" "$(_nl_int_to_ip "$m_int")" "$(_nl_int_to_hex "$m_int" | sed 's/0x//')" \
+<<<<<<< HEAD
             "$(_nl_int_to_ip "$wc_int")" "$hosts" 7 ""
+=======
+            "$(_nl_int_to_ip "$wc_int")" "$hosts" 10 ""
+>>>>>>> v.2.1.1
     done
     _nl_bot
 }
