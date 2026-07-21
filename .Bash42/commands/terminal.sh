@@ -297,7 +297,9 @@ nav() {
 
 		# ── Compteur scroll ───────────────────────────────────────
 		if [[ "$count" -gt "$viewport_size" ]]; then
-			printf "\n  ${C_SCROLL}[ %d / %d ]${C_RESET}${EL}\n" "$(( sel + 1 ))" "$count"
+			printf "  ${C_SCROLL}[ %d / %d ]${C_RESET}${EL}\n" "$(( sel + 1 ))" "$count"
+		else
+			printf "${EL}\n"
 		fi
 
 		# Nettoie tout résidu sous le curseur si le contenu précédent
@@ -465,8 +467,17 @@ nav() {
 					eval "$cmd $extra_args"
 					printf "\n[Terminé — appuie sur Entrée]"
 					read -r
+					stty echo 2>/dev/null
 					tput smcup
 					tput civis
+
+					# Force a full redraw after returning from command execution.
+					need_relist=1
+					cache_dir=""
+					cache_selected=-1
+					cache_viewport=-1
+					cache_cols=-1
+					cache_lines=-1
 				fi
 				;;
 			'')  # Enter
