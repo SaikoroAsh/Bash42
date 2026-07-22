@@ -55,7 +55,6 @@ help42()
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN} ${NEW}           ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN} ${NEW}                 ║"
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${NEW}                              ║"
-    echo -e "  ║   ${CYANB} ggui :${WHITE} Interactive git file status/stage menu (h: hidden)${CYAN} ${NEW}      ║"
 
     echo "  ║                                                                          ║"
     echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}                                                   ║"
