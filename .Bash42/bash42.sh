@@ -30,3 +30,7 @@ create-version-b42()
 {
 	python ~/.Bash42/py_commands/create_version_b42.py
 }
+
+if [[ $- == *i* ]]; then
+	welcomebash42
+fi

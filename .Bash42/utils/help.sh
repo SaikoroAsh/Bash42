@@ -25,7 +25,7 @@ help42()
     echo -e "  ║   ${WHITEB}[C Editor & Compilation:]${CYAN}                                              ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} ccw :${WHITE} Compile with all moulinette flags${CYAN}                               ║"
-    echo -e "  ║   ${CYANB} ff  :${WHITE} Run the norminette${CYAN}                                           ║"
+    echo -e "  ║   ${CYANB} ff  :${WHITE} Run the norminette${CYAN}                                              ║"
     echo -e "  ║   ${CYANB} v   :${WHITE} Open vim ${CYAN}                                                       ║"
     echo -e "  ║   ${CYANB} vh  :${WHITE} Open vim with header 42 ${CYAN}                                        ║"
     echo -e "  ║   ${CYANB} a   :${WHITE} Execute the a.out file${CYAN}                                          ║"
@@ -57,10 +57,10 @@ help42()
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${NEW}                              ║"
 
     echo "  ║                                                                          ║"
-    echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}                                                   ║"
+    echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}                                                  ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} nav  :${WHITE} Interactive directory navigator${CYAN}                                ║"
-    echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}        ║"
+    echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}         ║"
     echo -e "  ║   ${CYANB} mask :${WHITE}  reference table of all /1-/32 subnet masks.${CYAN} ${NEW}             ║"
     echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${UPDATED}   ║"
 
@@ -70,6 +70,9 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} help42:${WHITE} Shows this help page${CYAN} ${UPDATED}                                ║"
     echo -e "  ║   ${CYANB} b42   :${WHITE} Update to the latest version${CYAN}                                  ║"
+    echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN}                                    ║"
+    echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN}                                ║"
+    echo -e "  ║   ${CYANB} mute42:${WHITE} Disable the welcome banner${CYAN}                                     ║"
     echo -e "  ║   ${CYANB} sl    :${WHITE} Same as ls but if you're not so good with your keyboard${CYAN}       ║"
 
 
