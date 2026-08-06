@@ -39,7 +39,13 @@ alias gc="git clone"
 alias gb="git branch"
 
 
+alias gav="git branch -av"
+
+
 alias gbc="git checkout -b"
+
+
+alias grpo="git remote prune origin"
 
 
 alias fdata='du -h /home/$USER | sort -hr | head -20'
