@@ -63,7 +63,7 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} nav  :${WHITE} Interactive directory navigator${CYAN}                                ║"
     echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}         ║"
-    echo -e "  ║   ${CYANB} mask :${WHITE} reference table of all /1-/32 subnet masks.${CYAN} ${NEW}             ║"
+    echo -e "  ║   ${CYANB} mask :${WHITE} reference table of all /1-/32 subnet masks.${CYAN} ${NEW}              ║"
     echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${UPDATED}   ║"
 
 
@@ -72,8 +72,8 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} help42:${WHITE} Shows this help page${CYAN} ${UPDATED}                                ║"
     echo -e "  ║   ${CYANB} b42   :${WHITE} Update to the latest version${CYAN}                                  ║"
-    echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN} ${NEW}                             ║"
-    echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN} ${NEW}                         ║"
+    echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN} ${NEW}                              ║"
+    echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN} ${NEW}                          ║"
     echo -e "  ║   ${CYANB} mute42:${WHITE} Disable the welcome banner${CYAN} ${NEW}                              ║"
     echo -e "  ║   ${CYANB} sl    :${WHITE} Same as ls but if you're not so good with your keyboard${CYAN}       ║"
 
