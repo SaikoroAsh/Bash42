@@ -1,5 +1,14 @@
 [
     {
+        "version": "2.2.1",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.2.1/Bash42.zip",
+        "sha256": "bf658c2006e10590b5946101a704ab052124aad96c06ff6ef7e04f4a1f5d5f0b",
+        "changelog": [
+            "Reveal a set of commands to customize the welcome banner.",
+            "Fix the help command indentation message."
+        ]
+    },
+    {
         "version": "2.2.0",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.2.0/Bash42.zip",
         "sha256": "7ee81d67a15f9172e586b1663533993d8c8952adbf5f72cf43fb09228b6802e8",
