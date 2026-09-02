@@ -1,5 +1,13 @@
 [
     {
+        "version": "2.2.2",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.2.2/Bash42.zip",
+        "sha256": "163f415a4bb8c53e2e4c5a75b70b791b24c2b32e78ded71621190d8ce856186f",
+        "changelog": [
+            "Fix messages borders."
+        ]
+    },
+    {
         "version": "2.2.1",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.2.1/Bash42.zip",
         "sha256": "bf658c2006e10590b5946101a704ab052124aad96c06ff6ef7e04f4a1f5d5f0b",
