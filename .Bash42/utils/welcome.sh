@@ -45,12 +45,12 @@ __bash42_welcomebash42_big()
     echo -e "  ║   ${WHITEB}╚███╔███╔╝███████╗███████╗╚██████╗╚██████╔╝██║ ╚═╝ ██║███████╗${CYAN}         ║"
     echo -e "  ║   ${WHITEB} ╚══╝╚══╝ ╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝${CYAN}         ║"
     echo "  ║                                                                          ║"
-    echo -e "  ║  ${WHITEB} ████████╗ ██████╗ ${CYAN}   ${PURPLE}██████╗  █████╗ ███████╗██╗  ██╗██╗  ██╗██████╗ ${CYAN}  ║"
-    echo -e "  ║  ${WHITEB} ╚══██╔══╝██╔═══██╗${CYAN}   ${PURPLE}██╔══██╗██╔══██╗██╔════╝██║  ██║██║  ██║╚════██╗${CYAN}  ║"
-    echo -e "  ║  ${WHITEB}    ██║   ██║   ██║${CYAN}   ${PURPLE}██████╔╝███████║███████╗███████║███████║ █████╔╝${CYAN}  ║"
-    echo -e "  ║  ${WHITEB}    ██║   ██║   ██║${CYAN}   ${PURPLE}██╔══██╗██╔══██║╚════██║██╔══██║╚════██║██╔═══╝${CYAN}   ║"
-    echo -e "  ║  ${WHITEB}    ██║   ╚██████╔╝${CYAN}   ${PURPLE}██████╔╝██║  ██║███████║██║  ██║     ██║███████╗${CYAN}  ║"
-    echo -e "  ║  ${WHITEB}    ╚═╝    ╚═════╝ ${CYAN}   ${PURPLE}╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝     ╚═╝╚══════╝${CYAN}  ║"
+    echo -e "  ║  ${WHITEB} ████████╗ ██████╗ ${CYAN}     ${CYAN}██████╗  █████╗ ███████╗██╗  ██╗██╗  ██╗██████╗ ${CYAN}  ║"
+    echo -e "  ║  ${WHITEB} ╚══██╔══╝██╔═══██╗${CYAN}     ${CYAN}██╔══██╗██╔══██╗██╔════╝██║  ██║██║  ██║╚════██╗${CYAN}  ║"
+    echo -e "  ║  ${WHITEB}    ██║   ██║   ██║${CYAN}     ${CYAN}██████╔╝███████║███████╗███████║███████║ █████╔╝${CYAN}  ║"
+    echo -e "  ║  ${WHITEB}    ██║   ██║   ██║${CYAN}     ${CYAN}██╔══██╗██╔══██║╚════██║██╔══██║╚════██║██╔═══╝${CYAN}   ║"
+    echo -e "  ║  ${WHITEB}    ██║   ╚██████╔╝${CYAN}     ${CYAN}██████╔╝██║  ██║███████║██║  ██║     ██║███████╗${CYAN}  ║"
+    echo -e "  ║  ${WHITEB}    ╚═╝    ╚═════╝ ${CYAN}     ${CYAN}╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝     ╚═╝╚══════╝${CYAN}  ║"
     echo "  ║                                                                          ║"
     echo -e "  ║         ${WHITEB} For Help: help42                       To Update: b42 ${CYAN}          ║"
     echo "  ║                                                                          ║"
@@ -70,7 +70,7 @@ __bash42_welcomebash42_small()
     local RESET='\033[0m'
 
     echo -e "${CYAN}  ╔═══════════════════════════════╗"
-    echo -e "  ║       ${WHITEB}WELCOME TO ${PURPLE}BASH42${CYAN}       ║"
+    echo -e "  ║       ${WHITEB}WELCOME TO ${CYAN}BASH42${CYAN}       ║"
     echo -e "  ║      ${WHITE}help42 for commands${CYAN}      ║"
     echo -e "  ╚═══════════════════════════════╝${RESET}"
 }

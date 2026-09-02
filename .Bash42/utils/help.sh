@@ -72,9 +72,9 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} help42:${WHITE} Shows this help page${CYAN} ${UPDATED}                                ║"
     echo -e "  ║   ${CYANB} b42   :${WHITE} Update to the latest version${CYAN}                                  ║"
-    # echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN} ${NEW}                             ║"
-    # echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN} ${NEW}                         ║"
-    # echo -e "  ║   ${CYANB} mute42:${WHITE} Disable the welcome banner${CYAN} ${NEW}                              ║"
+    echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN} ${NEW}                             ║"
+    echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN} ${NEW}                         ║"
+    echo -e "  ║   ${CYANB} mute42:${WHITE} Disable the welcome banner${CYAN} ${NEW}                              ║"
     echo -e "  ║   ${CYANB} sl    :${WHITE} Same as ls but if you're not so good with your keyboard${CYAN}       ║"
 
 
