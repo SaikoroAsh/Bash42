@@ -37,6 +37,9 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} p   :${WHITE} Execute with python3${CYAN}                                            ║"
     echo -e "  ║   ${CYANB} ffp :${WHITE} Check .py with mypy and flake8${CYAN}                                  ║"
+    echo -e "  ║   ${CYANB} cve :${WHITE} Creates a venv (arg 1 = name)${CYAN} ${NEW}                             ║"
+    echo -e "  ║   ${CYANB} on  :${WHITE} Sources venv (arg 1 = name)${CYAN} ${NEW}                               ║"
+    echo -e "  ║   ${CYANB} off :${WHITE} Deactivates venv${CYAN} ${NEW}                                          ║"
 
 
     echo "  ║                                                                          ║"
@@ -54,9 +57,13 @@ help42()
     echo -e "  ║   ${CYANB} gcd  :${WHITE} Git clone and go to the directory created${CYAN}                      ║"
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN}                 ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN}                       ║"
+    echo -e "  ║   ${CYANB} gb   :${WHITE} Run git branch${CYAN} ${NEW}                                           ║"
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN}                                    ║"
+    echo -e "  ║   ${CYANB} gbc  :${WHITE} Creates a new branch${CYAN} ${NEW}                                     ║"
     echo -e "  ║   ${CYANB} gav  :${WHITE} Show local and remote branches with last commit${CYAN} ${NEW}          ║"
     echo -e "  ║   ${CYANB} grpo :${WHITE} Update the remote branches from origin${CYAN} ${NEW}                   ║"
+    echo -e "  ║   ${CYANB} grv  :${WHITE} Display the SSH link of the repo${CYAN} ${NEW}                         ║"
+
 
     echo "  ║                                                                          ║"
     echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}                                                  ║"
