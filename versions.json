@@ -1,5 +1,13 @@
 [
     {
+        "version": "2.3.0",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.3.0/Bash42.zip",
+        "sha256": "4a8286ffb04c4ea310db9089bd03f48f3507e32e6427c5e36ceb52a87096c4a1",
+        "changelog": [
+            "Added : cve, on , off, gbc, grv, cpal."
+        ]
+    },
+    {
         "version": "2.2.2",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.2.2/Bash42.zip",
         "sha256": "163f415a4bb8c53e2e4c5a75b70b791b24c2b32e78ded71621190d8ce856186f",
