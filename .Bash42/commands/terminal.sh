@@ -505,6 +505,269 @@ nav() {
 	done
 }
 
+cpal() {
+	local selected_color=-1
+	local key sequence sequence_part button x y row column color ansi_code copy_status
+	local block_row block_column cube_row cube_column style_changed
+	local style_flags=0 style_name="Default"
+	local -a palette_order=()
+	local -a green_slices=(0 3 1 4 2 5)
+
+	_cpal_build_order() {
+		local palette_color cube_row cube_column green_slice
+		local -a green_slices=(0 3 1 4 2 5)
+
+		for (( palette_color = 0; palette_color < 16; palette_color++ )); do
+			palette_order+=("$palette_color")
+		done
+		for green_slice in "${green_slices[@]}"; do
+			for (( cube_row = 0; cube_row < 6; cube_row++ )); do
+				for (( cube_column = 0; cube_column < 6; cube_column++ )); do
+					palette_order+=("$(( 16 + cube_row * 36 + green_slice * 6 + cube_column ))")
+				done
+			done
+		done
+		for (( palette_color = 232; palette_color < 256; palette_color++ )); do
+			palette_order+=("$palette_color")
+		done
+	}
+
+	_cpal_copy() {
+		local value="$1"
+		if command -v wl-copy >/dev/null 2>&1; then
+			printf '%s' "$value" | wl-copy 2>/dev/null
+		elif command -v xclip >/dev/null 2>&1; then
+			printf '%s' "$value" | xclip -selection clipboard 2>/dev/null
+		elif command -v xsel >/dev/null 2>&1; then
+			printf '%s' "$value" | xsel --clipboard --input 2>/dev/null
+		else
+			return 1
+		fi
+	}
+
+	_cpal_make_code() {
+		local style_sequence=""
+		[[ $(( style_flags & 2 )) -ne 0 ]] && style_sequence+='1;'
+		[[ $(( style_flags & 1 )) -ne 0 ]] && style_sequence+='3;'
+		[[ $(( style_flags & 4 )) -ne 0 ]] && style_sequence+='4;'
+		[[ $(( style_flags & 8 )) -ne 0 ]] && style_sequence+='2;'
+		[[ $(( style_flags & 16 )) -ne 0 ]] && style_sequence+='5;'
+		[[ $(( style_flags & 32 )) -ne 0 ]] && style_sequence+='7;'
+		[[ $(( style_flags & 64 )) -ne 0 ]] && style_sequence+='8;'
+		[[ $(( style_flags & 128 )) -ne 0 ]] && style_sequence+='9;'
+		[[ $(( style_flags & 256 )) -ne 0 ]] && style_sequence+='21;'
+		[[ $(( style_flags & 512 )) -ne 0 ]] && style_sequence+='53;'
+		if [[ -z "$style_sequence" ]]; then
+			ansi_code="\\033[38;5;${selected_color}m"
+		else
+			ansi_code="\\033[${style_sequence}38;5;${selected_color}m"
+		fi
+	}
+
+	_cpal_update_style_name() {
+		style_name=""
+		[[ $(( style_flags & 2 )) -ne 0 ]] && style_name="Bold"
+		[[ $(( style_flags & 1 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Italic"
+		[[ $(( style_flags & 4 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Underline"
+		[[ $(( style_flags & 8 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Dim"
+		[[ $(( style_flags & 16 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Blink"
+		[[ $(( style_flags & 32 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Reverse"
+		[[ $(( style_flags & 64 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Conceal"
+		[[ $(( style_flags & 128 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Strike"
+		[[ $(( style_flags & 256 )) -ne 0 ]] && style_name="${style_name:+$style_name+}DoubleUnderline"
+		[[ $(( style_flags & 512 )) -ne 0 ]] && style_name="${style_name:+$style_name+}Overline"
+		[[ -z "$style_name" ]] && style_name="Default"
+	}
+
+	_cpal_cleanup() {
+		printf '\033[?1000l\033[?1006l\033[?25h\033[0m\n'
+		stty echo icanon 2>/dev/null
+	}
+
+	_cpal_draw() {
+		local palette_color cube_row cube_column block_row block_column green_slice
+		local -a green_slices=(0 3 1 4 2 5)
+		local draw_swatch
+
+		draw_swatch() {
+			local swatch_color="$1"
+			if [[ "$swatch_color" -eq "$selected_color" ]]; then
+				printf '\033[48;5;%dm\033[4m   \033[0m' "$swatch_color"
+			else
+				printf '\033[48;5;%dm   \033[0m' "$swatch_color"
+			fi
+		}
+
+		printf '\033[2J\033[H'
+		printf 'ANSI 256 colors (click a color to copy its code, or press q to quit)\n\n'
+		printf 'Standard: '
+		for (( palette_color = 0; palette_color < 8; palette_color++ )); do draw_swatch "$palette_color"; done
+		printf '\nIntense : '
+		for (( palette_color = 8; palette_color < 16; palette_color++ )); do draw_swatch "$palette_color"; done
+		printf '\n\n'
+
+		for (( block_row = 0; block_row < 2; block_row++ )); do
+			for (( cube_row = 0; cube_row < 6; cube_row++ )); do
+				for (( block_column = 0; block_column < 3; block_column++ )); do
+					green_slice="${green_slices[$(( block_row * 3 + block_column ))]}"
+					for (( cube_column = 0; cube_column < 6; cube_column++ )); do
+						palette_color=$(( 16 + cube_row * 36 + green_slice * 6 + cube_column ))
+						draw_swatch "$palette_color"
+					done
+					[[ "$block_column" -lt 2 ]] && printf '   '
+				done
+				printf '\n'
+			done
+			[[ "$block_row" -eq 0 ]] && printf '\n'
+		done
+		printf '\n'
+		printf 'Grays:  '
+		for (( palette_color = 232; palette_color < 244; palette_color++ )); do draw_swatch "$palette_color"; done
+		printf '\n        '
+		for (( palette_color = 244; palette_color < 256; palette_color++ )); do draw_swatch "$palette_color"; done
+		printf '\n'
+		printf 'Style: [1 Default/reset]  [2 %s]  [3 %s]  [4 %s]\n' \
+			"$([[ $(( style_flags & 1 )) -ne 0 ]] && printf '*Italic' || printf 'Italic')" \
+			"$([[ $(( style_flags & 2 )) -ne 0 ]] && printf '*Bold' || printf 'Bold')" \
+			"$([[ $(( style_flags & 4 )) -ne 0 ]] && printf '*Underline' || printf 'Underline')"
+		printf '       [5 %s]  [6 %s]  [7 %s]  [8 %s]\n' \
+			"$([[ $(( style_flags & 8 )) -ne 0 ]] && printf '*Dim' || printf 'Dim')" \
+			"$([[ $(( style_flags & 16 )) -ne 0 ]] && printf '*Blink' || printf 'Blink')" \
+			"$([[ $(( style_flags & 32 )) -ne 0 ]] && printf '*Reverse' || printf 'Reverse')" \
+			"$([[ $(( style_flags & 64 )) -ne 0 ]] && printf '*Conceal' || printf 'Conceal')"
+		printf '       [9 %s]  [0 %s]  [a %s]\n' \
+			"$([[ $(( style_flags & 128 )) -ne 0 ]] && printf '*Strike' || printf 'Strike')" \
+			"$([[ $(( style_flags & 256 )) -ne 0 ]] && printf '*DoubleUnderline' || printf 'DoubleUnderline')" \
+			"$([[ $(( style_flags & 512 )) -ne 0 ]] && printf '*Overline' || printf 'Overline')"
+
+		if [[ "$selected_color" -ge 0 ]]; then
+			printf '\nSelected color: %d\n' "$selected_color"
+			printf 'Style: %s\n' "$style_name"
+			printf 'Copied: %s\n' "$ansi_code"
+		else
+			printf '\nClick a swatch to copy its selected style.\n'
+		fi
+	}
+
+	_cpal_build_order
+	trap '_cpal_cleanup' EXIT INT TERM
+	stty -echo -icanon min 1 time 0 2>/dev/null || {
+		trap - EXIT INT TERM
+		return 1
+	}
+	printf '\033[?1000h\033[?1006h\033[?25l'
+
+	while true; do
+		_cpal_draw
+		IFS= read -r -n1 key
+
+		if [[ "$key" == $'\033' ]]; then
+			IFS= read -r -n1 sequence
+			if [[ "$sequence" == '[' ]]; then
+				IFS= read -r -n1 sequence
+				if [[ "$sequence" == '<' ]]; then
+					sequence=''
+					while IFS= read -r -n1 sequence_part; do
+						sequence+="$sequence_part"
+						[[ "$sequence_part" == 'M' || "$sequence_part" == 'm' ]] && break
+					done
+					IFS=';' read -r button x y <<< "${sequence%[Mm]}"
+					if [[ "$button" == 0 && "$x" =~ ^[0-9]+$ && "$y" =~ ^[0-9]+$ ]]; then
+						color=-1
+						style_changed=0
+						if [[ "$y" -eq 3 || "$y" -eq 4 ]]; then
+							column=$(( (x - 11) / 3 ))
+							if [[ "$x" -ge 11 && "$x" -lt 35 && "$column" -lt 8 ]]; then
+								color=$(( column + (y - 3) * 8 ))
+							fi
+						elif [[ "$y" -ge 6 && "$y" -le 11 || "$y" -ge 13 && "$y" -le 18 ]]; then
+							block_row=0
+							[[ "$y" -ge 13 ]] && block_row=1
+							cube_row=$(( y - 6 - block_row * 7 ))
+							block_column=$(( (x - 1) / 21 ))
+							cube_column=$(( (x - 1 - block_column * 21) / 3 ))
+							if [[ "$x" -ge 1 && "$block_column" -lt 3 && "$cube_column" -lt 6 ]]; then
+								color=$(( 16 + cube_row * 36 + ${green_slices[$(( block_row * 3 + block_column ))]} * 6 + cube_column ))
+							fi
+						elif [[ "$y" -eq 20 || "$y" -eq 21 ]]; then
+							column=$(( (x - 9) / 3 ))
+							if [[ "$x" -ge 9 && "$x" -lt 45 && "$column" -lt 12 ]]; then
+								color=$(( 232 + column + (y - 20) * 12 ))
+							fi
+						elif [[ "$y" -eq 22 ]]; then
+							if [[ "$x" -ge 8 && "$x" -lt 25 ]]; then
+								style_flags=0
+								style_changed=1
+							elif [[ "$x" -ge 27 && "$x" -lt 39 ]]; then
+								style_flags=$(( style_flags ^ 1 ))
+								style_changed=1
+							elif [[ "$x" -ge 41 && "$x" -lt 52 ]]; then
+								style_flags=$(( style_flags ^ 2 ))
+								style_changed=1
+							elif [[ "$x" -ge 54 && "$x" -lt 70 ]]; then
+								style_flags=$(( style_flags ^ 4 ))
+								style_changed=1
+							fi
+						elif [[ "$y" -eq 23 ]]; then
+							if [[ "$x" -ge 8 && "$x" -lt 17 ]]; then style_flags=$(( style_flags ^ 8 )); style_changed=1
+							elif [[ "$x" -ge 19 && "$x" -lt 30 ]]; then style_flags=$(( style_flags ^ 16 )); style_changed=1
+							elif [[ "$x" -ge 32 && "$x" -lt 45 ]]; then style_flags=$(( style_flags ^ 32 )); style_changed=1
+							elif [[ "$x" -ge 47 && "$x" -lt 59 ]]; then style_flags=$(( style_flags ^ 64 )); style_changed=1
+							fi
+						elif [[ "$y" -eq 24 ]]; then
+							if [[ "$x" -ge 8 && "$x" -lt 18 ]]; then style_flags=$(( style_flags ^ 128 )); style_changed=1
+							elif [[ "$x" -ge 20 && "$x" -lt 38 ]]; then style_flags=$(( style_flags ^ 256 )); style_changed=1
+							elif [[ "$x" -ge 40 && "$x" -lt 51 ]]; then style_flags=$(( style_flags ^ 512 )); style_changed=1
+							fi
+							_cpal_update_style_name
+						fi
+						if [[ "$color" -ge 0 ]]; then
+							selected_color="$color"
+							_cpal_make_code
+							_cpal_copy "$ansi_code"
+							copy_status="$?"
+							_cpal_draw
+							if [[ "$copy_status" -ne 0 ]]; then
+								printf 'Clipboard unavailable; code: %s\n' "$ansi_code"
+							fi
+						elif [[ "$style_changed" -eq 1 && "$selected_color" -ge 0 ]]; then
+							_cpal_make_code
+							_cpal_copy "$ansi_code"
+						fi
+					fi
+				fi
+			else
+				_cpal_cleanup
+				trap - EXIT INT TERM
+				return 0
+			fi
+		elif [[ "$key" == 'q' || "$key" == 'Q' ]]; then
+			_cpal_cleanup
+			trap - EXIT INT TERM
+			return 0
+		elif [[ "$key" == '1' || "$key" == '2' || "$key" == '3' || "$key" == '4' || "$key" == '5' || "$key" == '6' || "$key" == '7' || "$key" == '8' || "$key" == '9' || "$key" == '0' || "$key" == 'a' || "$key" == 'A' ]]; then
+			case "$key" in
+				1) style_flags=0 ;;
+				2) style_flags=$(( style_flags ^ 1 )) ;;
+				3) style_flags=$(( style_flags ^ 2 )) ;;
+				4) style_flags=$(( style_flags ^ 4 )) ;;
+				5) style_flags=$(( style_flags ^ 8 )) ;;
+				6) style_flags=$(( style_flags ^ 16 )) ;;
+				7) style_flags=$(( style_flags ^ 32 )) ;;
+				8) style_flags=$(( style_flags ^ 64 )) ;;
+				9) style_flags=$(( style_flags ^ 128 )) ;;
+				0) style_flags=$(( style_flags ^ 256 )) ;;
+				a|A) style_flags=$(( style_flags ^ 512 )) ;;
+			esac
+			_cpal_update_style_name
+			if [[ "$selected_color" -ge 0 ]]; then
+				_cpal_make_code
+				_cpal_copy "$ansi_code"
+			fi
+		fi
+	done
+}
+
 
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════

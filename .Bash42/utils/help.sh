@@ -69,6 +69,7 @@ help42()
     echo -e "  ║   ${WHITEB}[Terminal and Tools:]${CYAN}                                                  ║"
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} nav  :${WHITE} Interactive directory navigator${CYAN}                                ║"
+    echo -e "  ║   ${CYANB} cpal :${WHITE} Select ANSI 256 colors and text styles${CYAN}                   ║"
     echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}         ║"
     echo -e "  ║   ${CYANB} mask :${WHITE} reference table of all /1-/32 subnet masks.${CYAN} ${NEW}              ║"
     echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${UPDATED}   ║"
