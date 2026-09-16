@@ -38,6 +38,7 @@ help42()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} p   :${WHITE} Execute with python3${CYAN}                                            ║"
     echo -e "  ║   ${CYANB} ffp :${WHITE} Check .py with mypy and flake8${CYAN}                                  ║"
+    echo -e "  ║   ${CYANB} pcc :${WHITE} Remove Python cache dirs (arg: path, -n dry-run)${CYAN}                ║"
     echo -e "  ║   ${CYANB} cve :${WHITE} Creates a venv (arg 1 = name)${CYAN} ${NEW}                             ║"
     echo -e "  ║   ${CYANB} on  :${WHITE} Sources venv (arg 1 = name)${CYAN} ${NEW}                               ║"
     echo -e "  ║   ${CYANB} off :${WHITE} Deactivates venv${CYAN} ${NEW}                                          ║"
@@ -91,3 +92,25 @@ help42()
     echo "  ╚══════════════════════════════════════════════════════════════════════════╝"
     echo -e "${RESET}"
 }
+
+# Remove Python caches: __pycache__ and .mypy_cache
+pcc()
+{
+    local dry=0
+    local path="."
+    if [ "$1" = "-n" ] || [ "$1" = "--dry-run" ]; then
+        dry=1
+        shift
+    fi
+    if [ -n "$1" ]; then
+        path="$1"
+    fi
+    if [ "$dry" -eq 1 ]; then
+        find "$path" -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -print
+        return
+    fi
+    # Delete matched directories safely using null delimiters
+    find "$path" -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -print0 | xargs -0 -r rm -rf --
+    echo "Removed Python cache directories under: $path"
+}
+
