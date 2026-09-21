@@ -39,9 +39,9 @@ help42()
     echo -e "  ║   ${CYANB} p   :${WHITE} Execute with python3${CYAN}                                            ║"
     echo -e "  ║   ${CYANB} ffp :${WHITE} Check .py with mypy and flake8${CYAN}                                  ║"
     echo -e "  ║   ${CYANB} pcc :${WHITE} Remove Python cache dirs (arg: path, -n dry-run)${CYAN}                ║"
-    echo -e "  ║   ${CYANB} cve :${WHITE} Creates a venv (arg 1 = name)${CYAN} ${NEW}                             ║"
-    echo -e "  ║   ${CYANB} on  :${WHITE} Sources venv (arg 1 = name)${CYAN} ${NEW}                               ║"
-    echo -e "  ║   ${CYANB} off :${WHITE} Deactivates venv${CYAN} ${NEW}                                          ║"
+    echo -e "  ║   ${CYANB} cve :${WHITE} Creates a venv (arg 1 = name)${CYAN}                                   ║"
+    echo -e "  ║   ${CYANB} on  :${WHITE} Sources venv (arg 1 = name)${CYAN}                                     ║"
+    echo -e "  ║   ${CYANB} off :${WHITE} Deactivates venv${CYAN}                                                ║"
 
 
     echo "  ║                                                                          ║"
@@ -59,7 +59,7 @@ help42()
     echo -e "  ║   ${CYANB} gcd  :${WHITE} Git clone and go to the directory created${CYAN}                      ║"
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN}                 ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN}                       ║"
-    echo -e "  ║   ${CYANB} gb   :${WHITE} Run git branch${CYAN} ${NEW}                                           ║"
+    echo -e "  ║   ${CYANB} gb   :${WHITE} Run git branch${CYAN}                                                 ║"
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN}                                    ║"
     echo -e "  ║   ${CYANB} gbc  :${WHITE} Creates a new branch${CYAN} ${NEW}                                     ║"
     echo -e "  ║   ${CYANB} gav  :${WHITE} Show local and remote branches with last commit${CYAN} ${NEW}          ║"
@@ -74,17 +74,18 @@ help42()
     echo -e "  ║   ${CYANB} cpal :${WHITE} Select ANSI 256 colors and text styles${CYAN} ${NEW}                   ║"
     echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}         ║"
     echo -e "  ║   ${CYANB} mask :${WHITE} reference table of all /1-/32 subnet masks.${CYAN} ${NEW}              ║"
-    echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN} ${UPDATED}   ║"
+    echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN}             ║"
+    echo -e "  ║   ${CYANB} fm   :${WHITE} Opens a new file manager windows for the given path${CYAN} ${UPDATED}  ║"
 
 
     echo -e "  ║                                                                          ║"
     echo -e "  ║   ${WHITEB}[Bash42:]${CYAN}                                                              ║"
     echo "  ║                                                                          ║"
-    echo -e "  ║   ${CYANB} help42:${WHITE} Shows this help page${CYAN} ${UPDATED}                                ║"
+    echo -e "  ║   ${CYANB} help42:${WHITE} Shows this help page${CYAN}                                          ║"
     echo -e "  ║   ${CYANB} b42   :${WHITE} Update to the latest version${CYAN}                                  ║"
-    echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN} ${NEW}                              ║"
-    echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN} ${NEW}                          ║"
-    echo -e "  ║   ${CYANB} mute42:${WHITE} Disable the welcome banner${CYAN} ${NEW}                              ║"
+    echo -e "  ║   ${CYANB} max42 :${WHITE} Set the big welcome banner${CYAN}                                    ║"
+    echo -e "  ║   ${CYANB} min42 :${WHITE} Set the compact welcome banner${CYAN}                                ║"
+    echo -e "  ║   ${CYANB} mute42:${WHITE} Disable the welcome banner${CYAN}                                    ║"
     echo -e "  ║   ${CYANB} sl    :${WHITE} Same as ls but if you're not so good with your keyboard${CYAN}       ║"
 
 

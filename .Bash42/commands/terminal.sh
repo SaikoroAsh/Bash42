@@ -1,5 +1,30 @@
 ### Terminal ###
 
+fm() {
+    local target="${1:-$PWD}"
+    case "$(uname -s)" in
+        Linux*)
+            if command -v nautilus &>/dev/null; then
+                nautilus --new-window "$target" > /dev/null 2>&1 & disown
+            elif command -v dolphin &>/dev/null; then
+                dolphin --new-window "$target" > /dev/null 2>&1 & disown
+            elif command -v thunar &>/dev/null; then
+                thunar --new-window "$target" > /dev/null 2>&1 & disown
+            elif command -v xdg-open &>/dev/null; then
+                xdg-open "$target" > /dev/null 2>&1 & disown
+            else
+                echo "No known file manager found."
+            fi
+            ;;
+        Darwin*)
+            open -n "$target"
+            ;;
+        *)
+            echo "Unsupported OS: $(uname -s)"
+            ;;
+    esac
+}
+
 nav() {
 	# ── Charte graphique : cyan/blanc-gras (style welcome42) ─────
 	local C_RESET="\033[0m"
