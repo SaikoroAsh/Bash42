@@ -75,7 +75,7 @@ help42()
     echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}         ║"
     echo -e "  ║   ${CYANB} mask :${WHITE} reference table of all /1-/32 subnet masks.${CYAN} ${NEW}              ║"
     echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN}             ║"
-    echo -e "  ║   ${CYANB} fm   :${WHITE} Opens a new file manager windows for the given path${CYAN} ${UPDATED}  ║"
+    echo -e "  ║   ${CYANB} fm   :${WHITE} Opens a new file manager windows for the given path${CYAN} ${NEW}      ║"
 
 
     echo -e "  ║                                                                          ║"
