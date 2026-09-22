@@ -73,11 +73,12 @@ help42()
     echo -e "  ║   ${CYANB} nav  :${WHITE} Interactive directory navigator${CYAN}                                ║"
     echo -e "  ║   ${CYANB} cpal :${WHITE} Select ANSI 256 colors and text styles${CYAN} ${NEW}                   ║"
     echo -e "  ║   ${CYANB} iph  :${WHITE} Analyze IP/mask (network, broadcast, host range)${CYAN} ${NEW}         ║"
-    echo -e "  ║   ${CYANB} mask :${WHITE} reference table of all /1-/32 subnet masks.${CYAN} ${NEW}              ║"
+    echo -e "  ║   ${CYANB} mask :${WHITE} Reference table of all /1-/32 subnet masks.${CYAN} ${NEW}              ║"
     echo -e "  ║   ${CYANB} fdata:${WHITE} Shows the path of the 20 most datavore directories${CYAN}             ║"
     echo -e "  ║   ${CYANB} fm   :${WHITE} Opens a new file manager windows for the given path${CYAN} ${NEW}      ║"
     echo -e "  ║   ${CYANB} vsc  :${WHITE} Opens vscode for the given path${CYAN} ${NEW}                          ║"
     echo -e "  ║   ${CYANB} cln  :${WHITE} Removes a.out files, __pycache__, and .mypy_cache dirs.${CYAN} ${NEW}  ║"
+    echo -e "  ║   ${CYANB}    -v / -venv :${WHITE} this flag remove the venv as well ${CYAN} ${NEW}              ║"
 
 
     echo -e "  ║                                                                          ║"

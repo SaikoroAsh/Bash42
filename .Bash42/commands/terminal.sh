@@ -3,16 +3,29 @@
 alias vsc="code ."
 
 cln() {
-    local f
-    f=$(find . \( -name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" \) \) 2>/dev/null)
+    local rm_venv=0
+    if [ "$1" = "-v" ] || [ "$1" = "venv" ]; then
+        rm_venv=1
+    fi
+
+    local names='-name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" \)'
+    if [ "$rm_venv" -eq 1 ]; then
+        f=$(find . \( -name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" -o -name ".venv" \) \) 2>/dev/null)
+    else
+        f=$(find . \( -name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" \) \) 2>/dev/null)
+    fi
+
     if [ -z "$f" ]; then
         echo "Nothing to clean"
     else
         echo "Deleted:"
         echo "$f"
         find . -name "a.out" -type f -delete
-        find . -type d -name "__pycache__" -exec rm -rf {} +
-        find . -type d -name ".mypy_cache" -exec rm -rf {} +
+        if [ "$rm_venv" -eq 1 ]; then
+            find . -type d \( -name "__pycache__" -o -name ".mypy_cache" -o -name ".venv" \) -exec rm -rf {} +
+        else
+            find . -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -exec rm -rf {} +
+        fi
     fi
 }
 fm() {
