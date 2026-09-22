@@ -1,5 +1,20 @@
 ### Terminal ###
 
+alias vsc="code ."
+
+cln() {
+    local f
+    f=$(find . \( -name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" \) \) 2>/dev/null)
+    if [ -z "$f" ]; then
+        echo "Nothing to clean"
+    else
+        echo "Deleted:"
+        echo "$f"
+        find . -name "a.out" -type f -delete
+        find . -type d -name "__pycache__" -exec rm -rf {} +
+        find . -type d -name ".mypy_cache" -exec rm -rf {} +
+    fi
+}
 fm() {
     local target="${1:-$PWD}"
     case "$(uname -s)" in
