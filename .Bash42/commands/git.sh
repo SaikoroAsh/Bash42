@@ -78,75 +78,69 @@ gre()
 }
 
 gbr() {
-    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
-        echo "gbr: not a git repository" >&2
-        return 1
-    fi
+    git rev-parse --is-inside-work-tree &>/dev/null || { echo "gbr: not a git repository" >&2; return 1; }
 
-    local branches=($(git branch 2>/dev/null | sed "s/\* //"))
-
-    if [ ${#branches[@]} -eq 0 ]; then
-        echo "gbr: no branches yet (no commits)" >&2
-        return 1
-    fi
+    local -a branches
+    mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)
+    local n=${#branches[@]}
+    (( n == 0 )) && { echo "gbr: no branches yet (no commits)" >&2; return 1; }
 
     local current=$(git branch --show-current)
-    local selected=0
-    local count=${#branches[@]}
+    local cur=0 top=0
+    for i in "${!branches[@]}"; do [[ "${branches[$i]}" == "$current" ]] && cur=$i; done
 
-    for i in "${!branches[@]}"; do
-        [[ "${branches[$i]}" == "$current" ]] && selected=$i
-    done
+    local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m' REV=$'\e[7m'
+    local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' BLU=$'\e[34m' CYN=$'\e[36m'
+    local BG=$'\e[48;5;237m'
 
-    _gbr_cleanup() {
-        tput cnorm
-        trap - INT TERM EXIT
-    }
+    local old; old=$(stty -g); stty -echo -isig
+    tput smcup; tput civis
 
-    _gbr_draw() {
-        tput cuu "$count" 2>/dev/null || true
-        for i in "${!branches[@]}"; do
-            local marker="  "
-            [[ "${branches[$i]}" == "$current" ]] && marker="* "
-            if [ "$i" -eq "$selected" ]; then
-                echo -e "\e[7m > ${marker}${branches[$i]}\e[0m"
-            else
-                echo "   ${marker}${branches[$i]}"
-            fi
+    while true; do
+        local cols rows vis end
+        cols=$(tput cols); rows=$(tput lines)
+        vis=$(( rows - 6 )); (( vis < 3 )) && vis=3
+        (( cur < top )) && top=$cur
+        (( cur >= top + vis )) && top=$(( cur - vis + 1 ))
+
+        printf '\e[H\e[J'
+        printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
+        pill=$'\e[30;46m BRANCHES \e[0m'
+        printf ' %s%sgbr%s  %s⎇%s %s%s%s   %s   %s%d/%d%s\n' \
+            "$B" "$CYN" "$R" "$D" "$R" "$B" "$current" "$R" "$pill" "$D" "$((cur+1))" "$n" "$R"
+        printf ' %s%s%s\n' "$D" "$rule" "$R"
+
+        end=$(( top + vis )); (( end > n )) && end=$n
+        for (( i = top; i < end; i++ )); do
+            local bg ptr box base
+            bg=""; ptr=" "
+            if [ $i -eq $cur ]; then bg=$BG; ptr="${CYN}▌"; fi
+            box="${D}○"; [[ "${branches[$i]}" == "$current" ]] && box="${GRN}●"
+            base=${branches[$i]}
+            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${base}${R}${bg}"
+            printf '%s\e[K%s\n' "$line" "$R"
         done
-    }
+        for (( i = end - top; i < vis; i++ )); do echo; done
 
-    for i in "${!branches[@]}"; do
-        local marker="  "
-        [[ "${branches[$i]}" == "$current" ]] && marker="* "
-        if [ "$i" -eq "$selected" ]; then
-            echo -e "\e[7m > ${marker}${branches[$i]}\e[0m"
-        else
-            echo "   ${marker}${branches[$i]}"
-        fi
-    done
+        printf ' %s↑↓%s move  %senter%s checkout  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R"
 
-    trap '_gbr_cleanup; return 130' INT
-    trap '_gbr_cleanup; return 143' TERM
-    trap '_gbr_cleanup' EXIT
-    tput civis
-
-    while IFS= read -rsn1 key; do
-        if [[ $key == $'\x1b' ]]; then
-            read -rsn2 key
-            case $key in
-                '[A') ((selected > 0)) && ((selected--)) ;;
-                '[B') ((selected < count - 1)) && ((selected++)) ;;
+        IFS= read -rsn1 k
+        if [[ $k == $'\e' ]]; then
+            read -rsn2 -t 0.05 k || true
+            case $k in
+                "[A") (( cur > 0 )) && (( cur-- )) ;;
+                "[B") (( cur < n - 1 )) && (( cur++ )) ;;
             esac
-        elif [[ $key == '' ]]; then
+        elif [[ $k == "" ]]; then
             break
+        elif [[ $k == q || $k == $'\x03' ]]; then
+            cur=-1; break
         fi
-        _gbr_draw
     done
 
-    _gbr_cleanup
-    echo
-    git checkout "${branches[$selected]}"
+    tput cnorm; tput rmcup; stty "$old"
+    (( cur < 0 )) && return 0
+    git checkout "${branches[$cur]}"
 }
 
 gsc() {
