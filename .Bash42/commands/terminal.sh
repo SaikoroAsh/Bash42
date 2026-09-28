@@ -78,7 +78,6 @@ nav() {
 	local status_msg=""
 	local -A marked=()
 	local -a marked_order=()
-	local -a clipboard_paths=()
 	local -a entries=()
 
 	_nav_cleanup() {
@@ -93,14 +92,14 @@ nav() {
 	_nav_read_key() {
 		local __out_name="$1"
 		local ch seq
-		IFS= read -r -s -n1 ch
+		IFS= read -r -s -N 1 ch
 		if [[ -z "$ch" ]]; then
-			printf -v "$__out_name" '%s' ""
+			printf -v "$__out_name" '%s' $'\n'
 			return
 		fi
 		if [[ "$ch" == $'\e' ]]; then
 			seq="$ch"
-			while IFS= read -r -s -n1 ch; do
+			while IFS= read -r -s -N 1 ch; do
 				seq+="$ch"
 				case "$ch" in
 					[A-Za-z~]|$'\n'|$'\r')
@@ -127,6 +126,13 @@ nav() {
 		esac
 	}
 
+	_nav_is_enter() {
+		local seq="$1"
+		[[ "$seq" == $'\n' || "$seq" == $'\r' ]] && return 0
+		[[ "$seq" == $'\eOM' || "$seq" == $'\e[13~' || "$seq" == $'\e[13;'* ]] && return 0
+		return 1
+	}
+
 	_nav_is_shift_enter() {
 		local seq="$1"
 		[[ "$seq" == *";2"* && "$seq" == *"13"* ]] && return 0
@@ -137,7 +143,7 @@ nav() {
 
 	tput smcup
 	tput civis
-	stty -echo -icanon -isig -ixon -ixoff min 1 time 0 2>/dev/null || {
+	stty -echo -icanon -ixon -ixoff min 1 time 0 2>/dev/null || {
 		tput rmcup
 		tput cnorm
 		stty sane 2>/dev/null
@@ -258,7 +264,7 @@ nav() {
 		dir_spaces=$(printf '%*s' "$dir_pad" '')
 		printf "${C_SEP}  |${C_RESET}  ${C_PATH}%s${dir_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" 			"$dir_display"
 
-		local hint="[↵] Enter  [⇧↵] Parent  [R] Del  [^C/^V] Copy/Paste  [?] Help  [q] Quit"
+		local hint="[↵] Enter  [⇧↵] Parent  [R] Del  [?] Help  [q] Quit"
 		if [[ -n "$status_msg" ]]; then
 			hint="$status_msg"
 		fi
@@ -326,8 +332,6 @@ nav() {
 			right_lines+=(" ${C_PRE_DIR}[Enter]${C_RESET} open/enter")
 			right_lines+=(" ${C_PRE_DIR}[⇧↵]${C_RESET} cd current dir")
 			right_lines+=(" ${C_PRE_DIR}[R]${C_RESET} delete selected")
-			right_lines+=(" ${C_PRE_DIR}[^C]${C_RESET} copy selected")
-			right_lines+=(" ${C_PRE_DIR}[^V]${C_RESET} paste here")
 			right_lines+=(" ${C_PRE_DIR}[Space/S]${C_RESET} select item")
 			right_lines+=(" ${C_PRE_DIR}[h]${C_RESET} show hidden")
 			right_lines+=(" ${C_PRE_DIR}[?]${C_RESET} toggle help")
@@ -375,6 +379,10 @@ nav() {
 	local cache_viewport=-1
 	local cache_cols=-1
 	local cache_lines=-1
+	local cache_status=""
+	local cache_help_visible=-1
+	local cache_show_hidden=-1
+	local delete_prompt_active=0
 	local need_relist=1
 
 	while true; do
@@ -398,70 +406,52 @@ nav() {
 			viewport_start=$(( selected - viewport_size + 1 ))
 		fi
 
-		if [[ "$current_dir" != "$cache_dir" || "$selected" -ne "$cache_selected" || "$viewport_start" -ne "$cache_viewport" || "$term_cols_now" -ne "$cache_cols" || "$term_lines" -ne "$cache_lines" ]]; then
+		if [[ "$need_relist" -eq 1 || "$current_dir" != "$cache_dir" || "$selected" -ne "$cache_selected" || "$viewport_start" -ne "$cache_viewport" || "$term_cols_now" -ne "$cache_cols" || "$term_lines" -ne "$cache_lines" || "$status_msg" != "$cache_status" || "$help_visible" -ne "$cache_help_visible" || "$show_hidden" -ne "$cache_show_hidden" ]]; then
 			_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
 			cache_dir="$current_dir"
 			cache_selected="$selected"
 			cache_viewport="$viewport_start"
 			cache_cols="$term_cols_now"
 			cache_lines="$term_lines"
+			cache_status="$status_msg"
+			cache_help_visible="$help_visible"
+			cache_show_hidden="$show_hidden"
+			need_relist=0
 		fi
 
 		_nav_read_key key
-		if [[ "$key" == $'\003' ]]; then
-			if [[ "$count" -eq 0 ]]; then
-				status_msg="Nothing to copy"
-				continue
-			fi
-			clipboard_paths=()
-			if [[ ${#marked_order[@]} -gt 0 ]]; then
-				for idx in "${marked_order[@]}"; do
-					clipboard_paths+=("${entries[$idx]}")
-				done
-			else
-				clipboard_paths+=("${entries[$selected]}")
-			fi
-			status_msg="Copied ${#clipboard_paths[@]} item(s)"
-			continue
-		fi
-		if [[ "$key" == $'\x16' ]]; then
-			if [[ ${#clipboard_paths[@]} -eq 0 ]]; then
-				status_msg="Clipboard empty"
-				continue
-			fi
-			local paste_ok=1
-			local source dest_name dest_path suffix
-			for source in "${clipboard_paths[@]}"; do
-				dest_name="${source##*/}"
-				dest_path="$current_dir/$dest_name"
-				suffix=1
-				while [[ -e "$dest_path" || -L "$dest_path" ]]; do
-					dest_path="$current_dir/${dest_name}-copy-$suffix"
-					(( suffix++ ))
-				done
-				cp -a -- "$source" "$dest_path" 2>/dev/null || { paste_ok=0; status_msg="Copy failed: ${source##*/}"; break; }
-			done
-			if [[ "$paste_ok" -eq 1 ]]; then
-				status_msg="Pasted ${#clipboard_paths[@]} item(s) to $current_dir"
-				need_relist=1
-				selected=0
-				viewport_start=0
-				marked=()
-				marked_order=()
-			fi
-			continue
-		fi
 		if [[ "$key" == $'\e' ]]; then
 			_nav_cleanup
 			trap - EXIT INT TERM
 			return 0
 		fi
 		if [[ "$key" == $'\e['* || "$key" == $'\eO'* ]]; then
-			if [[ "$key" == *"13"* && "$key" == *"2"* ]] || [[ "$key" == *"13;2"* ]] || [[ "$key" == *"27;2"* ]] || [[ "$key" == *"1;2A"* ]] || [[ "$key" == *"1;2B"* ]] || [[ "$key" == *"1;2C"* ]] || [[ "$key" == *"1;2D"* ]]; then
+			if _nav_is_shift_enter "$key"; then
 				_nav_cleanup
 				trap - EXIT INT TERM
 				cd "$current_dir" || return
 				return 0
+			fi
+			if _nav_is_enter "$key"; then
+				if [[ "$count" -eq 0 ]]; then
+					_nav_cleanup
+					trap - EXIT INT TERM
+					cd "$current_dir" || return
+					return 0
+				fi
+				local target="${entries[$selected]}"
+				if [[ -d "$target" ]]; then
+					_nav_cleanup
+					trap - EXIT INT TERM
+					cd "$target" || return
+					return 0
+				else
+					_nav_cleanup
+					trap - EXIT INT TERM
+					_nav_open "$target"
+					cd "$current_dir" || return
+					return 0
+				fi
 			fi
 			case "$key" in
 				$'\e[A'|$'\e[1;2A')
@@ -479,7 +469,7 @@ nav() {
 						viewport_start=0
 						marked=()
 						marked_order=()
-						status_msg=""
+						# Keep clipboard and status feedback intact while navigating.
 					fi
 					continue
 					;;
@@ -493,7 +483,7 @@ nav() {
 						viewport_start=0
 						marked=()
 						marked_order=()
-						status_msg=""
+						# Keep clipboard and success messages while leaving the directory.
 						mapfile -t entries < <(_nav_list "$current_dir")
 						need_relist=0
 						local pi
@@ -628,6 +618,10 @@ nav() {
 				continue
 				;;
 			r|R)
+				if [[ "$delete_prompt_active" -eq 1 ]]; then
+					status_msg="Deletion already pending"
+					continue
+				fi
 				if [[ "$count" -eq 0 ]]; then
 					status_msg="Nothing to remove"
 					continue
@@ -648,78 +642,44 @@ nav() {
 						valid=0
 						break
 					fi
-					if [[ -d "$target" ]]; then
-						local files=()
-						while IFS= read -r -d '' f; do files+=("$f"); done < <(find "$target" -mindepth 1 -maxdepth 1 -print0)
-						if [[ ${#files[@]} -gt 0 ]]; then
-							status_msg="Cannot remove non-empty directory: ${target##*/}"
-							valid=0
-							break
-						fi
-					fi
 				done
 				if [[ "$valid" -eq 0 ]]; then
 					continue
 				fi
-				printf "Delete %d item(s)? [y/N] " "${#remove_targets[@]}" >&2
+				delete_prompt_active=1
+				status_msg="Delete ${#remove_targets[@]} item(s)? [y/N]"
+				need_relist=1
+				cache_status=""
+				_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
 				local answer
-				IFS= read -r -n1 answer
-				while IFS= read -r -s -n1 -t 0.05 extra; do :; done
-				printf '\n' >&2
-				if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
-					for target in "${remove_targets[@]}"; do
-						rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
-					done
-					marked=()
-					marked_order=()
-					selected=0
-					viewport_start=0
-					status_msg="Deleted ${#remove_targets[@]} item(s)"
-					need_relist=1
-				else
-					status_msg="Deletion cancelled"
-				fi
-				;;
-			$'\003')
-				if [[ "$count" -eq 0 ]]; then
-					status_msg="Nothing to copy"
-					continue
-				fi
-				clipboard_paths=()
-				if [[ ${#marked_order[@]} -gt 0 ]]; then
-					for idx in "${marked_order[@]}"; do
-						clipboard_paths+=("${entries[$idx]}")
-					done
-				else
-					clipboard_paths+=("${entries[$selected]}")
-				fi
-				status_msg="Copied ${#clipboard_paths[@]} item(s)"
-				;;
-			$'\x16')
-				if [[ ${#clipboard_paths[@]} -eq 0 ]]; then
-					status_msg="Clipboard empty"
-					continue
-				fi
-				local paste_ok=1
-				local source dest_name dest_path suffix
-				for source in "${clipboard_paths[@]}"; do
-					dest_name="${source##*/}"
-					dest_path="$current_dir/$dest_name"
-					suffix=1
-					while [[ -e "$dest_path" || -L "$dest_path" ]]; do
-						dest_path="$current_dir/${dest_name}-copy-$suffix"
-						(( suffix++ ))
-					done
-					cp -a -- "$source" "$dest_path" 2>/dev/null || { paste_ok=0; status_msg="Copy failed: ${source##*/}"; break; }
+				while true; do
+					_nav_read_key answer
+					case "$answer" in
+						y|Y)
+							for target in "${remove_targets[@]}"; do
+								rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
+							done
+							marked=()
+							marked_order=()
+							selected=0
+							viewport_start=0
+							status_msg="Deleted ${#remove_targets[@]} item(s)"
+							need_relist=1
+							delete_prompt_active=0
+							break
+							;;
+						n|N|$'\e')
+							status_msg="Deletion cancelled"
+							need_relist=1
+							delete_prompt_active=0
+							break
+							;;
+						*)
+							# Ignore all other keys while the delete confirmation is waiting.
+							continue
+							;;
+					esac
 				done
-				if [[ "$paste_ok" -eq 1 ]]; then
-					status_msg="Pasted ${#clipboard_paths[@]} item(s) to $current_dir"
-					need_relist=1
-					selected=0
-					viewport_start=0
-					marked=()
-					marked_order=()
-				fi
 				;;
 			$'\n'|$'\r')
 				if [[ "$count" -eq 0 ]]; then
