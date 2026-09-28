@@ -56,40 +56,69 @@ fm() {
 nav() {
 	# ── Charte graphique : cyan/blanc-gras (style welcome42) ─────
 	local C_RESET="\033[0m"
-	local C_DIR="\033[1;37m"          # blanc gras  — dossiers
-	local C_FILE="\033[0;36m"         # cyan        — fichiers
-	local C_SEL="\033[1;30;46m"       # bg cyan, texte noir gras — sélection
-	local C_PATH="\033[1;37m"         # blanc gras  — chemin courant
-	local C_HINT="\033[2;36m"         # cyan dim    — hints
-	local C_EMPTY="\033[2;31m"        # rouge dim   — vide
-	local C_SCROLL="\033[0;36m"       # cyan        — compteur scroll
-	local C_SEP="\033[0;36m"          # cyan        — séparateurs ╔╗╚╝║═
-	# Preview — même palette mais dim
-	local C_PRE_DIR="\033[2;37m"      # blanc dim
-	local C_PRE_FILE="\033[2;36m"     # cyan dim
-	local C_PRE_TITLE="\033[1;36m"    # cyan gras
-	local C_PRE_EMPTY="\033[2;31m"    # rouge dim
-	local C_PRE_SEP="\033[2;36m"      # cyan dim
+	local C_DIR="\033[1;37m"
+	local C_FILE="\033[0;36m"
+	local C_SEL="\033[1;30;46m"
+	local C_PATH="\033[1;37m"
+	local C_HINT="\033[2;36m"
+	local C_EMPTY="\033[2;31m"
+	local C_SCROLL="\033[0;36m"
+	local C_SEP="\033[0;36m"
+	local C_PRE_DIR="\033[2;37m"
+	local C_PRE_FILE="\033[2;36m"
+	local C_PRE_TITLE="\033[1;36m"
+	local C_PRE_EMPTY="\033[2;31m"
+	local C_PRE_SEP="\033[2;36m"
 
 	local current_dir
 	current_dir="$(pwd)"
 	local selected=0
 	local show_hidden=0
+	local help_visible=0
+	local status_msg=""
+	local -A marked=()
+	local -a marked_order=()
+	local -a clipboard_paths=()
+	local -a entries=()
 
 	_nav_cleanup() {
 		tput cnorm
 		tput rmcup
+		stty sane 2>/dev/null
 		stty echo 2>/dev/null
 	}
 	trap '_nav_cleanup' EXIT INT TERM
 	trap '' INT
 
+	_nav_read_key() {
+		local __out_name="$1"
+		local ch seq
+		IFS= read -r -s -n1 ch
+		if [[ -z "$ch" ]]; then
+			printf -v "$__out_name" '%s' ""
+			return
+		fi
+		if [[ "$ch" == $'\e' ]]; then
+			seq="$ch"
+			while IFS= read -r -s -n1 ch; do
+				seq+="$ch"
+				case "$ch" in
+					[A-Za-z~]|$'\n'|$'\r')
+						break
+						;;
+				esac
+			done
+			printf -v "$__out_name" '%s' "$seq"
+			return
+		fi
+		printf -v "$__out_name" '%s' "$ch"
+	}
+
 	_nav_open() {
 		local file="$1"
 		local ext="${file##*.}"
 		case "$ext" in
-			sh|bash|zsh|py|js|ts|json|yaml|yml|toml|conf|cfg|ini|\
-			txt|md|rst|csv|log|env|gitignore|dockerfile)
+			sh|bash|zsh|py|js|ts|json|yaml|yml|toml|conf|cfg|ini|			txt|md|rst|csv|log|env|gitignore|dockerfile)
 				vim "$file"
 				;;
 			*)
@@ -98,8 +127,22 @@ nav() {
 		esac
 	}
 
+	_nav_is_shift_enter() {
+		local seq="$1"
+		[[ "$seq" == *";2"* && "$seq" == *"13"* ]] && return 0
+		[[ "$seq" == *"13;2"* ]] && return 0
+		[[ "$seq" == *"27;2"* && "$seq" == *"13"* ]] && return 0
+		return 1
+	}
+
 	tput smcup
 	tput civis
+	stty -echo -icanon -isig -ixon -ixoff min 1 time 0 2>/dev/null || {
+		tput rmcup
+		tput cnorm
+		stty sane 2>/dev/null
+		return 1
+	}
 
 	_nav_list() {
 		local dir="$1"
@@ -115,14 +158,11 @@ nav() {
 		)
 	}
 
-	# ── Preview : retourne les lignes de contenu d'un dossier ─────
-	# Chaque ligne est terminée par \0 pour supporter les caractères spéciaux
 	_nav_preview_lines() {
 		local dir="$1"
-		local col_w="$2"     # largeur VISUELLE disponible (sans le │)
+		local col_w="$2"
 		local max_lines="$3"
 		local -a plines=()
-
 		local -a items=()
 		local f
 		while IFS= read -r f; do
@@ -136,14 +176,11 @@ nav() {
 		)
 
 		local item_count="${#items[@]}"
-
-		# Titre
 		local title_raw=" ${dir##*/}/"
 		local max_title=$(( col_w - 2 ))
 		[[ ${#title_raw} -gt $max_title ]] && title_raw="${title_raw:0:$max_title}…"
 		plines+=("${C_PRE_TITLE}${title_raw}${C_RESET}")
 
-		# Séparateur ----- (ASCII, toujours 1 colonne)
 		local sep
 		sep=$(printf '%*s' "$col_w" '' | tr ' ' '-')
 		plines+=("${C_PRE_SEP}${sep}${C_RESET}")
@@ -158,7 +195,8 @@ nav() {
 			for (( j=0; j<display; j++ )); do
 				local iname="${items[$j]}"
 				local ibase="${iname##*/}"
-				local ilabel icolor
+				local ilabel="${ibase}"
+				local icolor
 				if [[ -d "$iname" ]]; then
 					ilabel=" ${ibase}/"
 					icolor="$C_PRE_DIR"
@@ -191,71 +229,46 @@ nav() {
 		shift 5
 		local -a entries=("$@")
 
-		# Au lieu de tput clear (efface tout l'écran → flash visible),
-		# on replace juste le curseur en haut à gauche, puis chaque ligne
-		# est effacée (tput el) avant d'être réécrite. tput ed à la toute
-		# fin nettoie un éventuel résidu si le nouveau contenu est plus
-		# court que l'ancien (ex: moins de fichiers, preview fermée).
 		tput cup 0 0
 		local EL
-		EL="$(tput el)"   # erase to end of line, capturé une seule fois
+		EL="$(tput el)"
 
-		# ── Dimensions ───────────────────────────────────────────
 		local term_cols term_lines
 		term_cols="$(tput cols)"
 		term_lines="$(tput lines)"
 
-		# Layout exact par ligne :
-		#   "  " (2) + left_content (left_w) + " " (1) + "│" (1) + right_content (right_w)
-		#   = left_w + right_w + 4 = term_cols
-		# Donc :
-		#   left_w  = term_cols/2 - 3   (│ tombe pile à term_cols/2)
-		#   right_w = term_cols - left_w - 4
 		local left_w=$(( term_cols / 2 - 3 ))
 		[[ "$left_w" -lt 10 ]] && left_w=10
 		local right_w=$(( term_cols - left_w - 4 ))
 		[[ "$right_w" -lt 5 ]] && right_w=5
 
-		# ── En-tête ──────────────────────────────────────────────
-		# On évite les chars box-drawing double-trait (═║╔╗╠╣) qui ont
-		# east_asian_width=Ambiguous et peuvent occuper 2 colonnes sur
-		# certains terminaux (macOS iTerm2, Terminal.app).
-		# On utilise à la place des tirets ASCII simples et |, garantis 1 col.
-		#
-		# Layout bordure : "  +" (3) + border_w×"-" + "+" (1) = term_cols
-		#   → border_w = term_cols - 4
-		# Layout ligne ║  : "  |  " (5) + content_w + "  |" (3) = term_cols
-		#   → content_w = term_cols - 8
 		local border_w=$(( term_cols - 4 ))
 		local content_w=$(( term_cols - 8 ))
 		[[ "$content_w" -lt 1 ]] && content_w=1
-
 		local border_line
 		border_line=$(printf '%*s' "$border_w" '' | tr ' ' '-')
 		printf "${C_SEP}  +%s+${C_RESET}${EL}\n" "$border_line"
 
-		# Chemin : tronquer par la gauche si nécessaire (garde la fin du path)
 		local dir_display="$dir"
 		if [[ ${#dir_display} -gt $content_w ]]; then
 			dir_display="~${dir_display:$(( ${#dir_display} - content_w + 1 ))}"
 		fi
-		# Pad manuel pour éviter que printf %-*s compte les bytes ANSI comme des colonnes
 		local dir_pad=$(( content_w - ${#dir_display} ))
 		local dir_spaces
 		dir_spaces=$(printf '%*s' "$dir_pad" '')
-		printf "${C_SEP}  |${C_RESET}  ${C_PATH}%s${dir_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" \
-			"$dir_display"
+		printf "${C_SEP}  |${C_RESET}  ${C_PATH}%s${dir_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" 			"$dir_display"
 
-		# Hints : tronquer si terminal trop étroit
-		local hint="[↵] Cd here  [c] VSCode  [x] Execute  [h] Show Hidden  [q] Quit"
+		local hint="[↵] Enter  [⇧↵] Parent  [R] Del  [^C/^V] Copy/Paste  [?] Help  [q] Quit"
+		if [[ -n "$status_msg" ]]; then
+			hint="$status_msg"
+		fi
 		if [[ ${#hint} -gt $content_w ]]; then
 			hint="${hint:0:$(( content_w - 1 ))}~"
 		fi
 		local hint_pad=$(( content_w - ${#hint} ))
 		local hint_spaces
 		hint_spaces=$(printf '%*s' "$hint_pad" '')
-		printf "${C_SEP}  |${C_RESET}  ${C_HINT}%s${hint_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" \
-			"$hint"
+		printf "${C_SEP}  |${C_RESET}  ${C_HINT}%s${hint_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" 			"$hint"
 		printf "${C_SEP}  +%s+${C_RESET}${EL}\n" "$border_line"
 		printf "${EL}\n"
 
@@ -265,17 +278,16 @@ nav() {
 			return
 		fi
 
-		# ── Preview active ? ─────────────────────────────────────
 		local preview_active=0
 		local preview_dir=""
-		if [[ "$count" -gt 0 && -d "${entries[$sel]}" ]]; then
+		if [[ "$help_visible" -eq 1 ]]; then
+			preview_active=1
+			preview_dir="$current_dir"
+		elif [[ "$count" -gt 0 && -d "${entries[$sel]}" ]]; then
 			preview_active=1
 			preview_dir="${entries[$sel]}"
 		fi
 
-		# ── Lignes gauche ─────────────────────────────────────────
-		# Chaque entrée = 1 chaîne déjà formatée (avec codes ANSI)
-		# On stocke la chaîne finale prête à printf %b
 		local -a left_rendered=()
 		local i name base label
 		local end=$(( viewport_start + viewport_size ))
@@ -284,24 +296,21 @@ nav() {
 		for (( i=viewport_start; i<end; i++ )); do
 			name="${entries[$i]}"
 			base="${name##*/}"
-
+			label="$base"
 			if [[ -d "$name" ]]; then
 				label="${base}/"
-			else
-				label="${base}"
 			fi
-
-			# Tronquer au besoin (longueur visuelle = longueur brute ici, pas d'ANSI dans label)
+			if [[ -n "${marked[$i]+x}" ]]; then
+				label="* ${label}"
+			fi
 			if [[ ${#label} -gt $left_w ]]; then
 				label="${label:0:$(( left_w - 1 ))}…"
 			fi
-
 			local pad=$(( left_w - ${#label} ))
 			local spaces=""
-			local s; for (( s=0; s<pad; s++ )); do spaces+=" "; done
-
+			local s
+			for (( s=0; s<pad; s++ )); do spaces+=" "; done
 			if [[ "$i" -eq "$sel" ]]; then
-				# Highlight sur le texte uniquement, pas le padding
 				left_rendered+=("${C_SEL}${label}${C_RESET}${spaces}")
 			elif [[ -d "$name" ]]; then
 				left_rendered+=("${C_DIR}${label}${C_RESET}${spaces}")
@@ -310,62 +319,57 @@ nav() {
 			fi
 		done
 
-		# ── Lignes droite (preview) ───────────────────────────────
 		local -a right_lines=()
-		if [[ "$preview_active" -eq 1 ]]; then
+		if [[ "$help_visible" -eq 1 ]]; then
+			right_lines+=("${C_PRE_TITLE} Nav keys${C_RESET}")
+			right_lines+=("${C_PRE_SEP}--------------------------------${C_RESET}")
+			right_lines+=(" ${C_PRE_DIR}[Enter]${C_RESET} open/enter")
+			right_lines+=(" ${C_PRE_DIR}[⇧↵]${C_RESET} cd current dir")
+			right_lines+=(" ${C_PRE_DIR}[R]${C_RESET} delete selected")
+			right_lines+=(" ${C_PRE_DIR}[^C]${C_RESET} copy selected")
+			right_lines+=(" ${C_PRE_DIR}[^V]${C_RESET} paste here")
+			right_lines+=(" ${C_PRE_DIR}[Space/S]${C_RESET} select item")
+			right_lines+=(" ${C_PRE_DIR}[h]${C_RESET} show hidden")
+			right_lines+=(" ${C_PRE_DIR}[?]${C_RESET} toggle help")
+			right_lines+=(" ${C_PRE_DIR}[q]${C_RESET} quit")
+		elif [[ "$preview_active" -eq 1 ]]; then
 			local raw_preview
 			while IFS= read -r -d $'\0' raw_preview; do
 				right_lines+=("$raw_preview")
 			done < <(_nav_preview_lines "$preview_dir" "$right_w" "$viewport_size")
 		fi
 
-		# ── Affichage côte à côte ─────────────────────────────────
 		local n_left="${#left_rendered[@]}"
 		local n_right="${#right_lines[@]}"
-		# n_rows = max des deux, mais plafonné à viewport_size pour ne jamais déborder
 		local n_rows=$(( n_left > n_right ? n_left : n_right ))
 		[[ "$n_rows" -gt "$viewport_size" ]] && n_rows="$viewport_size"
 
 		local r
 		for (( r=0; r<n_rows; r++ )); do
-			# Colonne gauche : "  " + left_w chars + " " = left_w+3 avant le |
 			if [[ "$r" -lt "$n_left" ]]; then
 				printf "  %b " "${left_rendered[$r]}"
 			else
 				printf "%$(( left_w + 3 ))s" ""
 			fi
-
-			# Séparateur | uniquement si la preview est active
-			# ET qu'il y a du contenu à afficher dans l'une ou l'autre colonne
-			if [[ "$preview_active" -eq 1 ]]; then
+			if [[ "$preview_active" -eq 1 || "$help_visible" -eq 1 ]]; then
 				printf "${C_PRE_SEP}|${C_RESET}"
-				# Contenu droite — seulement s'il existe pour cette ligne
 				if [[ "$r" -lt "$n_right" ]]; then
 					printf "%b" "${right_lines[$r]}"
 				fi
 			fi
-
 			printf "${EL}\n"
 		done
 
-		# ── Compteur scroll ───────────────────────────────────────
 		if [[ "$count" -gt "$viewport_size" ]]; then
 			printf "  ${C_SCROLL}[ %d / %d ]${C_RESET}${EL}\n" "$(( sel + 1 ))" "$count"
 		else
 			printf "${EL}\n"
 		fi
-
-		# Nettoie tout résidu sous le curseur si le contenu précédent
-		# était plus long (ex: on a quitté un dossier avec preview vers
-		# un dossier vide, ou la fenêtre a été redimensionnée plus petite)
 		tput ed
 	}
 
-	local -a entries
-	local key esc_seq
+	local key seq ch
 	local viewport_start=0
-
-	# ── Cache d'état : on ne redessine que si quelque chose a changé ──
 	local cache_dir=""
 	local cache_selected=-1
 	local cache_viewport=-1
@@ -374,13 +378,11 @@ nav() {
 	local need_relist=1
 
 	while true; do
-		# Relire le dossier seulement si le dossier a changé
 		if [[ "$need_relist" -eq 1 || "$current_dir" != "$cache_dir" ]]; then
 			mapfile -t entries < <(_nav_list "$current_dir")
 			need_relist=0
 		fi
 		local count="${#entries[@]}"
-
 		[[ "$count" -eq 0 ]] && selected=0
 		[[ "$selected" -ge "$count" && "$count" -gt 0 ]] && selected=$(( count - 1 ))
 
@@ -396,16 +398,8 @@ nav() {
 			viewport_start=$(( selected - viewport_size + 1 ))
 		fi
 
-		# Redessiner seulement si l'état visible a changé
-		if [[ "$current_dir"    != "$cache_dir"       ||
-		      "$selected"       -ne "$cache_selected"  ||
-		      "$viewport_start" -ne "$cache_viewport"  ||
-		      "$term_cols_now"  -ne "$cache_cols"      ||
-		      "$term_lines"     -ne "$cache_lines"     ]]; then
-
-			_nav_draw "$current_dir" "$selected" "$count" \
-				"$viewport_start" "$viewport_size" "${entries[@]}"
-
+		if [[ "$current_dir" != "$cache_dir" || "$selected" -ne "$cache_selected" || "$viewport_start" -ne "$cache_viewport" || "$term_cols_now" -ne "$cache_cols" || "$term_lines" -ne "$cache_lines" ]]; then
+			_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
 			cache_dir="$current_dir"
 			cache_selected="$selected"
 			cache_viewport="$viewport_start"
@@ -413,67 +407,116 @@ nav() {
 			cache_lines="$term_lines"
 		fi
 
-		IFS= read -r -s -n1 key
-
-		if [[ "$key" == $'\x1b' ]]; then
-			IFS= read -r -s -n1 -t 0.1 esc_seq
-			if [[ "$esc_seq" == '[' ]]; then
-				IFS= read -r -s -n1 -t 0.1 esc_seq
-				case "$esc_seq" in
-					A)
-						[[ "$selected" -gt 0 ]] && (( selected-- ))
-						continue
-						;;
-					B)
-						[[ "$count" -gt 0 && "$selected" -lt $(( count - 1 )) ]] && (( selected++ ))
-						continue
-						;;
-					C)
-						if [[ "$count" -gt 0 && -d "${entries[$selected]}" ]]; then
-							current_dir="${entries[$selected]}"
-							selected=0
-							viewport_start=0
-						fi
-						continue
-						;;
-					D)
-						local parent
-						parent="$(dirname "$current_dir")"
-						if [[ "$parent" != "$current_dir" ]]; then
-							local came_from="${current_dir##*/}"
-							current_dir="$parent"
-							selected=0
-							viewport_start=0
-
-							# On charge la liste du parent ici (nécessaire pour trouver
-							# la position du dossier d'où on vient)
-							mapfile -t entries < <(_nav_list "$current_dir")
-							need_relist=0
-							local pi
-							for (( pi=0; pi<${#entries[@]}; pi++ )); do
-								if [[ "${entries[$pi]##*/}" == "$came_from" ]]; then
-									selected="$pi"
-									break
-								fi
-							done
-
-							local pterm_lines
-							pterm_lines="$(tput lines)"
-							local pvp_size=$(( pterm_lines - 7 ))
-							[[ "$pvp_size" -lt 1 ]] && pvp_size=1
-							viewport_start=0
-							if [[ "$selected" -ge "$pvp_size" ]]; then
-								viewport_start=$(( selected - pvp_size + 1 ))
-							fi
-						fi
-						continue
-						;;
-				esac
+		_nav_read_key key
+		if [[ "$key" == $'\003' ]]; then
+			if [[ "$count" -eq 0 ]]; then
+				status_msg="Nothing to copy"
+				continue
+			fi
+			clipboard_paths=()
+			if [[ ${#marked_order[@]} -gt 0 ]]; then
+				for idx in "${marked_order[@]}"; do
+					clipboard_paths+=("${entries[$idx]}")
+				done
 			else
+				clipboard_paths+=("${entries[$selected]}")
+			fi
+			status_msg="Copied ${#clipboard_paths[@]} item(s)"
+			continue
+		fi
+		if [[ "$key" == $'\x16' ]]; then
+			if [[ ${#clipboard_paths[@]} -eq 0 ]]; then
+				status_msg="Clipboard empty"
+				continue
+			fi
+			local paste_ok=1
+			local source dest_name dest_path suffix
+			for source in "${clipboard_paths[@]}"; do
+				dest_name="${source##*/}"
+				dest_path="$current_dir/$dest_name"
+				suffix=1
+				while [[ -e "$dest_path" || -L "$dest_path" ]]; do
+					dest_path="$current_dir/${dest_name}-copy-$suffix"
+					(( suffix++ ))
+				done
+				cp -a -- "$source" "$dest_path" 2>/dev/null || { paste_ok=0; status_msg="Copy failed: ${source##*/}"; break; }
+			done
+			if [[ "$paste_ok" -eq 1 ]]; then
+				status_msg="Pasted ${#clipboard_paths[@]} item(s) to $current_dir"
+				need_relist=1
+				selected=0
+				viewport_start=0
+				marked=()
+				marked_order=()
+			fi
+			continue
+		fi
+		if [[ "$key" == $'\e' ]]; then
+			_nav_cleanup
+			trap - EXIT INT TERM
+			return 0
+		fi
+		if [[ "$key" == $'\e['* || "$key" == $'\eO'* ]]; then
+			if [[ "$key" == *"13"* && "$key" == *"2"* ]] || [[ "$key" == *"13;2"* ]] || [[ "$key" == *"27;2"* ]] || [[ "$key" == *"1;2A"* ]] || [[ "$key" == *"1;2B"* ]] || [[ "$key" == *"1;2C"* ]] || [[ "$key" == *"1;2D"* ]]; then
 				_nav_cleanup
 				trap - EXIT INT TERM
+				cd "$current_dir" || return
 				return 0
 			fi
+			case "$key" in
+				$'\e[A'|$'\e[1;2A')
+					[[ "$selected" -gt 0 ]] && (( selected-- ))
+					continue
+					;;
+				$'\e[B'|$'\e[1;2B')
+					[[ "$count" -gt 0 && "$selected" -lt $(( count - 1 )) ]] && (( selected++ ))
+					continue
+					;;
+				$'\e[C'|$'\e[1;2C')
+					if [[ "$count" -gt 0 && -d "${entries[$selected]}" ]]; then
+						current_dir="${entries[$selected]}"
+						selected=0
+						viewport_start=0
+						marked=()
+						marked_order=()
+						status_msg=""
+					fi
+					continue
+					;;
+				$'\e[D'|$'\e[1;2D')
+					local parent
+					parent="$(dirname "$current_dir")"
+					if [[ "$parent" != "$current_dir" ]]; then
+						local came_from="${current_dir##*/}"
+						current_dir="$parent"
+						selected=0
+						viewport_start=0
+						marked=()
+						marked_order=()
+						status_msg=""
+						mapfile -t entries < <(_nav_list "$current_dir")
+						need_relist=0
+						local pi
+						for (( pi=0; pi<${#entries[@]}; pi++ )); do
+							if [[ "${entries[$pi]##*/}" == "$came_from" ]]; then
+								selected="$pi"
+								break
+							fi
+						done
+						local pterm_lines
+						pterm_lines="$(tput lines)"
+						local pvp_size=$(( pterm_lines - 7 ))
+						[[ "$pvp_size" -lt 1 ]] && pvp_size=1
+						viewport_start=0
+						if [[ "$selected" -ge "$pvp_size" ]]; then
+							viewport_start=$(( selected - pvp_size + 1 ))
+						fi
+					fi
+					continue
+					;;
+				*)
+					;;
+				esac
 		fi
 
 		case "$key" in
@@ -486,7 +529,11 @@ nav() {
 				show_hidden=$(( 1 - show_hidden ))
 				selected=0
 				viewport_start=0
+				marked=()
+				marked_order=()
+				status_msg="Hidden files: $([[ "$show_hidden" -eq 1 ]] && printf 'on' || printf 'off')"
 				need_relist=1
+				continue
 				;;
 			c|C)
 				if [[ "$count" -gt 0 ]]; then
@@ -508,9 +555,9 @@ nav() {
 					local ext="${target##*.}"
 					local cmd
 					if [[ "$ext" == "py" ]]; then
-						cmd="python3 \"$target\""
+						cmd="python3 "$target""
 					else
-						cmd="\"$target\""
+						cmd=""$target""
 					fi
 					tput rmcup
 					tput cnorm
@@ -523,8 +570,6 @@ nav() {
 					stty echo 2>/dev/null
 					tput smcup
 					tput civis
-
-					# Force a full redraw after returning from command execution.
 					need_relist=1
 					cache_dir=""
 					cache_selected=-1
@@ -533,7 +578,150 @@ nav() {
 					cache_lines=-1
 				fi
 				;;
-			'')  # Enter
+			'?')
+				help_visible=$(( 1 - help_visible ))
+				status_msg=""
+				if [[ "$help_visible" -eq 1 ]]; then
+					status_msg="Help visible"
+				fi
+				need_relist=1
+				continue
+				;;
+			' ')
+				if [[ "$count" -gt 0 ]]; then
+					if [[ -n "${marked[$selected]+x}" ]]; then
+						unset 'marked[$selected]'
+						for idx in "${!marked_order[@]}"; do
+							if [[ "${marked_order[$idx]}" == "$selected" ]]; then
+								unset 'marked_order[$idx]'
+								break
+							fi
+						done
+						status_msg="Selection cleared"
+					else
+						marked["$selected"]=1
+						marked_order+=("$selected")
+						status_msg="Selected ${#marked_order[@]} item(s)"
+					fi
+					need_relist=1
+				fi
+				continue
+				;;
+			s|S)
+				if [[ "$count" -gt 0 ]]; then
+					if [[ -n "${marked[$selected]+x}" ]]; then
+						unset 'marked[$selected]'
+						for idx in "${!marked_order[@]}"; do
+							if [[ "${marked_order[$idx]}" == "$selected" ]]; then
+								unset 'marked_order[$idx]'
+								break
+							fi
+						done
+						status_msg="Selection cleared"
+					else
+						marked["$selected"]=1
+						marked_order+=("$selected")
+						status_msg="Selected ${#marked_order[@]} item(s)"
+					fi
+					need_relist=1
+				fi
+				continue
+				;;
+			r|R)
+				if [[ "$count" -eq 0 ]]; then
+					status_msg="Nothing to remove"
+					continue
+				fi
+				local -a remove_targets=()
+				if [[ ${#marked_order[@]} -gt 0 ]]; then
+					for idx in "${marked_order[@]}"; do
+						remove_targets+=("${entries[$idx]}")
+					done
+				else
+					remove_targets+=("${entries[$selected]}")
+				fi
+				local valid=1
+				local target
+				for target in "${remove_targets[@]}"; do
+					if [[ ! -e "$target" && ! -L "$target" ]]; then
+						status_msg="Missing target: ${target##*/}"
+						valid=0
+						break
+					fi
+					if [[ -d "$target" ]]; then
+						local files=()
+						while IFS= read -r -d '' f; do files+=("$f"); done < <(find "$target" -mindepth 1 -maxdepth 1 -print0)
+						if [[ ${#files[@]} -gt 0 ]]; then
+							status_msg="Cannot remove non-empty directory: ${target##*/}"
+							valid=0
+							break
+						fi
+					fi
+				done
+				if [[ "$valid" -eq 0 ]]; then
+					continue
+				fi
+				printf "Delete %d item(s)? [y/N] " "${#remove_targets[@]}" >&2
+				local answer
+				IFS= read -r -n1 answer
+				while IFS= read -r -s -n1 -t 0.05 extra; do :; done
+				printf '\n' >&2
+				if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
+					for target in "${remove_targets[@]}"; do
+						rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
+					done
+					marked=()
+					marked_order=()
+					selected=0
+					viewport_start=0
+					status_msg="Deleted ${#remove_targets[@]} item(s)"
+					need_relist=1
+				else
+					status_msg="Deletion cancelled"
+				fi
+				;;
+			$'\003')
+				if [[ "$count" -eq 0 ]]; then
+					status_msg="Nothing to copy"
+					continue
+				fi
+				clipboard_paths=()
+				if [[ ${#marked_order[@]} -gt 0 ]]; then
+					for idx in "${marked_order[@]}"; do
+						clipboard_paths+=("${entries[$idx]}")
+					done
+				else
+					clipboard_paths+=("${entries[$selected]}")
+				fi
+				status_msg="Copied ${#clipboard_paths[@]} item(s)"
+				;;
+			$'\x16')
+				if [[ ${#clipboard_paths[@]} -eq 0 ]]; then
+					status_msg="Clipboard empty"
+					continue
+				fi
+				local paste_ok=1
+				local source dest_name dest_path suffix
+				for source in "${clipboard_paths[@]}"; do
+					dest_name="${source##*/}"
+					dest_path="$current_dir/$dest_name"
+					suffix=1
+					while [[ -e "$dest_path" || -L "$dest_path" ]]; do
+						dest_path="$current_dir/${dest_name}-copy-$suffix"
+						(( suffix++ ))
+					done
+					cp -a -- "$source" "$dest_path" 2>/dev/null || { paste_ok=0; status_msg="Copy failed: ${source##*/}"; break; }
+				done
+				if [[ "$paste_ok" -eq 1 ]]; then
+					status_msg="Pasted ${#clipboard_paths[@]} item(s) to $current_dir"
+					need_relist=1
+					selected=0
+					viewport_start=0
+					marked=()
+					marked_order=()
+				fi
+				;;
+			$'\n'|$'\r')
 				if [[ "$count" -eq 0 ]]; then
 					_nav_cleanup
 					trap - EXIT INT TERM
@@ -554,7 +742,10 @@ nav() {
 					return 0
 				fi
 				;;
-		esac
+			*)
+				status_msg=""
+				;;
+			esac
 	done
 }
 
