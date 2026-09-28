@@ -89,6 +89,120 @@ gbr() {
     local cur=0 top=0
     for i in "${!branches[@]}"; do [[ "${branches[$i]}" == "$current" ]] && cur=$i; done
 
+    # Build parent -> children map to display a tree-like view
+    declare -A parent_of children_of index_of
+    for i in "${!branches[@]}"; do
+        index_of["${branches[$i]}"]=$i
+    done
+    # For each branch, try to find an obvious parent by checking which other branch contains its tip
+    for b in "${branches[@]}"; do
+        parent_of["$b"]=""
+        # find other branches whose tip is an ancestor of b (excluding b itself), pick the closest (most recent)
+        local best="" best_common=""
+        for other in "${branches[@]}"; do
+            [[ "$other" == "$b" ]] && continue
+            # check if other is ancestor of b
+            if git merge-base --is-ancestor "refs/heads/$other" "refs/heads/$b" 2>/dev/null; then
+                # compute merge-base time (approx via commit date) to pick the closest ancestor
+                common=$(git merge-base "refs/heads/$other" "refs/heads/$b" 2>/dev/null)
+                if [[ -z "$best_common" || $(git show -s --format=%ct "$common") -gt $(git show -s --format=%ct "$best_common") ]]; then
+                    best="$other"; best_common="$common"
+                fi
+            fi
+        done
+        if [[ -n "$best" ]]; then
+            parent_of["$b"]="$best"
+            children_of["$best"]+=$b$'\n'
+        fi
+    done
+
+    # Keep the active branch as the display root, but preserve a nested branch only when
+    # its parent is not also an ancestor of the current branch.
+    declare -A display_children
+    for b in "${branches[@]}"; do
+        display_children["$b"]=""
+    done
+    for b in "${branches[@]}"; do
+        [[ "$b" == "$current" ]] && continue
+        local parent="$current"
+        local p="${parent_of[$b]}"
+        if [[ -n "$p" && "$p" != "$current" ]]; then
+            if git merge-base --is-ancestor "refs/heads/$p" "refs/heads/$current" 2>/dev/null; then
+                parent="$current"
+            else
+                parent="$p"
+            fi
+        fi
+        display_children["$parent"]+="$b"$'\n'
+    done
+    for b in "${branches[@]}"; do
+        children_of["$b"]="${display_children[$b]}"
+    done
+
+    # Produce a flattened, display-ordered list that shows tree indentation
+    # The active branch is the display root.
+    local -a roots
+    roots=("$current")
+    # helper: sort a list of branch names by tip commit time (newest first)
+    _sort_by_time() {
+        local -a in=("${!1}") out=()
+        local -a tmp=()
+        local br t
+        for br in "${in[@]}"; do
+            t=$(git show -s --format=%ct "refs/heads/$br" 2>/dev/null || echo 0)
+            tmp+=("$t:$br")
+        done
+        IFS=$'\n' read -r -d '' -a tmp < <(printf '%s\n' "${tmp[@]}" | sort -r -n && printf '\0')
+        for br in "${tmp[@]}"; do out+=("${br#*:}"); done
+        eval "$2=(\"${out[@]}\")"
+    }
+
+    # sort roots newest-first
+    _sort_by_time roots roots_sorted
+
+    display_branches=()
+    # depth-first traversal with children sorted newest-first
+    _dfs_sorted() {
+        local name="$1" indent="$2"
+        display_branches+=("$name"$'\t'"$indent")
+        # read children into array
+        local -a kids=()
+        IFS=$'\n' read -r -d '' -a kids < <(printf '%s' "${children_of[$name]}" && printf '\0')
+            if (( ${#kids[@]} )); then
+                # sort kids by tip time
+                _sort_by_time kids kids_sorted
+                local k
+                for k in "${kids_sorted[@]}"; do [[ -z "$k" ]] && continue; _dfs_sorted "$k" "$((indent+1))"; done
+            fi
+    }
+
+    local r
+    for r in "${roots_sorted[@]}"; do _dfs_sorted "$r" 0; done
+    # If any branches weren't included (due to cycles or parent detection failure), append them flat
+    for b in "${branches[@]}"; do
+        found=0
+        for d in "${display_branches[@]}"; do [[ "$d" == "$b"* ]] && { found=1; break; } done
+        [[ $found -eq 0 ]] && display_branches+=("$b"$'\t'"0")
+    done
+
+    # Split display_branches into names and indentation levels, rebuild selection mapping
+    local -a db_names db_indent
+    for entry in "${display_branches[@]}"; do
+        name=${entry%%$'\t'*}
+        indent=${entry#*$'\t'}
+        db_names+=("$name")
+        db_indent+=("$indent")
+    done
+    # Override branch list and count to reflect display order
+    branches=("")
+    for name in "${db_names[@]}"; do branches+=("$name"); done
+    # drop the initial empty placeholder
+    branches=("${branches[@]:1}")
+    local n=${#branches[@]}
+    # reposition cur to display index of current branch
+    cur=0
+    for i in "${!branches[@]}"; do [[ "${branches[$i]}" == "$current" ]] && cur=$i; done
+
     local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m' REV=$'\e[7m'
     local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' BLU=$'\e[34m' CYN=$'\e[36m'
     local BG=$'\e[48;5;237m'
@@ -112,12 +226,20 @@ gbr() {
 
         end=$(( top + vis )); (( end > n )) && end=$n
         for (( i = top; i < end; i++ )); do
-            local bg ptr box base
+            local bg ptr box base prefix indent
             bg=""; ptr=" "
             if [ $i -eq $cur ]; then bg=$BG; ptr="${CYN}▌"; fi
             box="${D}○"; [[ "${branches[$i]}" == "$current" ]] && box="${GRN}●"
             base=${branches[$i]}
-            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${base}${R}${bg}"
+            indent=${db_indent[$i]:-0}
+            prefix=""
+            if (( indent > 0 )); then
+                # simple tree: 2 spaces per indent, use └─ for last-level marker
+                local j
+                for (( j=1; j<indent; j++ )); do prefix+="  "; done
+                prefix+="└─ "
+            fi
+            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${prefix}${base}${R}${bg}"
             printf '%s\e[K%s\n' "$line" "$R"
         done
         for (( i = end - top; i < vis; i++ )); do echo; done
