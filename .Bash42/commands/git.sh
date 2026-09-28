@@ -86,8 +86,71 @@ gbr() {
     (( n == 0 )) && { echo "gbr: no branches yet (no commits)" >&2; return 1; }
 
     local current=$(git branch --show-current)
+    # build a prefix trie from branch names (split by '/'), preserving order
+    declare -A children=()
+    declare -A is_branch=()
+    declare -A fullbranch=()
+    local ROOT_KEY="__GIT_ROOT__"
+    for br in "${branches[@]}"; do
+        IFS='/' read -ra parts <<< "$br"
+        parent=""
+        prefix=""
+        for part in "${parts[@]}"; do
+            if [[ -z $prefix ]]; then prefix="$part"; else prefix="$prefix/$part"; fi
+            parent_key=${parent:-$ROOT_KEY}
+            children["$parent_key"]+="$prefix"$'\n'
+            parent="$prefix"
+        done
+        is_branch["$prefix"]=1
+        fullbranch["$prefix"]="$br"
+    done
+
+    # render trie into flat display arrays with tree connectors
+    declare -a display_label=() display_branch=() display_depth=()
+    declare -a parent_index=() first_child=()
+    _display_idx=0
+    declare -a anc=()
+    _gbr_render() {
+        local node="$1" depth="$2" parent_idx="$3"
+        local kids_raw="${children[$node]}"
+        IFS=$'\n' read -r -a kids <<< "$kids_raw"
+        local count=${#kids[@]}
+        if (( count == 1 )); then
+            if [[ -z "${kids[0]}" ]]; then count=0; fi
+        fi
+        for ((j=0;j<count;j++)); do
+            local child="${kids[j]}"
+            local last=0; (( j == count - 1 )) && last=1
+            local conn=""
+            for ((k=0;k<depth;k++)); do
+                if [[ "${anc[k]}" == "1" ]]; then conn+="   "; else conn+="│  "; fi
+            done
+            if (( depth > 0 )); then
+                if (( last )); then conn+="└─ "; else conn+="├─ "; fi
+            fi
+            local idx=$_display_idx
+            display_label[idx]="${conn}${child##*/}"
+            if [[ -n "${is_branch[$child]}" ]]; then display_branch[idx]="${fullbranch[$child]}"; else display_branch[idx]=""; fi
+            display_depth[idx]="$depth"
+            parent_index[idx]="$parent_idx"
+            if [[ "$parent_idx" =~ ^-?[0-9]+$ ]] && (( parent_idx >= 0 )); then
+                if [[ -z "${first_child[$parent_idx]+x}" ]]; then
+                    first_child[$parent_idx]="$idx"
+                fi
+            fi
+            ((_display_idx++))
+            anc[depth]="$last"
+            _gbr_render "$child" $((depth+1)) $idx
+            anc[depth]=0
+        done
+    }
+
+    _gbr_render "$ROOT_KEY" 0 -1
     local cur=0 top=0
-    for i in "${!branches[@]}"; do [[ "${branches[$i]}" == "$current" ]] && cur=$i; done
+    local count_display=${#display_label[@]}
+    for i in "${!display_branch[@]}"; do [[ "${display_branch[$i]}" == "$current" ]] && cur=$i; done
+    # ensure parent_index and first_child arrays exist for navigation
+    :
 
     local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m' REV=$'\e[7m'
     local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' BLU=$'\e[34m' CYN=$'\e[36m'
@@ -107,17 +170,22 @@ gbr() {
         printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
         pill=$'\e[30;46m BRANCHES \e[0m'
         printf ' %s%sgbr%s  %s⎇%s %s%s%s   %s   %s%d/%d%s\n' \
-            "$B" "$CYN" "$R" "$D" "$R" "$B" "$current" "$R" "$pill" "$D" "$((cur+1))" "$n" "$R"
+            "$B" "$CYN" "$R" "$D" "$R" "$B" "$current" "$R" "$pill" "$D" "$((cur+1))" "$count_display" "$R"
         printf ' %s%s%s\n' "$D" "$rule" "$R"
 
-        end=$(( top + vis )); (( end > n )) && end=$n
+        end=$(( top + vis )); (( end > count_display )) && end=$count_display
         for (( i = top; i < end; i++ )); do
-            local bg ptr box base
+            local bg ptr box lbl branchname
             bg=""; ptr=" "
             if [ $i -eq $cur ]; then bg=$BG; ptr="${CYN}▌"; fi
-            box="${D}○"; [[ "${branches[$i]}" == "$current" ]] && box="${GRN}●"
-            base=${branches[$i]}
-            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${base}${R}${bg}"
+            branchname="${display_branch[$i]}"
+            if [[ -n $branchname ]]; then
+                if [[ "$branchname" == "$current" ]]; then box="${GRN}●"; else box="${D}○"; fi
+            else
+                box="${D}○"
+            fi
+            lbl="${display_label[$i]}"
+            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${lbl}${R}${bg}"
             printf '%s\e[K%s\n' "$line" "$R"
         done
         for (( i = end - top; i < vis; i++ )); do echo; done
@@ -129,7 +197,12 @@ gbr() {
             read -rsn2 -t 0.05 k || true
             case $k in
                 "[A") (( cur > 0 )) && (( cur-- )) ;;
-                "[B") (( cur < n - 1 )) && (( cur++ )) ;;
+                "[B") (( cur < count_display - 1 )) && (( cur++ )) ;;
+                "[C") # right -> first child if available
+                    if [[ -n "${first_child[$cur]}" ]]; then cur=${first_child[$cur]}; fi ;;
+                "[D") # left -> parent if available
+                    pidx=${parent_index[$cur]}
+                    if [[ "$pidx" =~ ^-?[0-9]+$ ]] && (( pidx >= 0 )); then cur=$pidx; fi ;;
             esac
         elif [[ $k == "" ]]; then
             break
@@ -140,7 +213,10 @@ gbr() {
 
     tput cnorm; tput rmcup; stty "$old"
     (( cur < 0 )) && return 0
-    git checkout "${branches[$cur]}"
+    # map selected display index back to branch name (if any)
+    sel_branch="${display_branch[$cur]}"
+    if [[ -z $sel_branch ]]; then echo "No branch at selection"; return 1; fi
+    git checkout "$sel_branch"
 }
 
 gsc() {
