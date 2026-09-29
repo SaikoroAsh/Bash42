@@ -86,6 +86,8 @@ gbr() {
     (( n == 0 )) && { echo "gbr: no branches yet (no commits)" >&2; return 1; }
 
     local current=$(git branch --show-current)
+    local merge_src=""
+    local merge_note=""
     # build a prefix trie from branch names (split by '/'), preserving order
     declare -A children=()
     declare -A is_branch=()
@@ -180,7 +182,13 @@ gbr() {
             if [ $i -eq $cur ]; then bg=$BG; ptr="${CYN}▌"; fi
             branchname="${display_branch[$i]}"
             if [[ -n $branchname ]]; then
-                if [[ "$branchname" == "$current" ]]; then box="${GRN}●"; else box="${D}○"; fi
+                if [[ "$branchname" == "$merge_src" ]]; then
+                    box="${YEL}●"
+                elif [[ "$branchname" == "$current" ]]; then
+                    box="${GRN}●"
+                else
+                    box="${D}○"
+                fi
             else
                 box="${D}○"
             fi
@@ -190,9 +198,11 @@ gbr() {
         done
         for (( i = end - top; i < vis; i++ )); do echo; done
 
-        printf ' %s↑↓%s move  %senter%s checkout  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R"
+        if [[ -n $merge_note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$merge_note" "$R"; else echo; fi
+        printf ' %s↑↓%s move  %senter%s checkout  %sM%s merge  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R" "$B" "$R"
 
         IFS= read -rsn1 k
+        merge_note=""
         if [[ $k == $'\e' ]]; then
             read -rsn2 -t 0.05 k || true
             case $k in
@@ -208,6 +218,42 @@ gbr() {
             break
         elif [[ $k == q || $k == $'\x03' ]]; then
             cur=-1; break
+        elif [[ $k == m || $k == M ]]; then
+            local selected="${display_branch[$cur]}"
+            if [[ -z "$selected" ]]; then
+                merge_note="no branch selected"
+                continue
+            fi
+            if [[ -z "$merge_src" ]]; then
+                merge_src="$selected"
+                merge_note="merge source: $selected"
+                continue
+            fi
+            if [[ "$selected" == "$merge_src" ]]; then
+                merge_src=""
+                merge_note="merge cancelled"
+                continue
+            fi
+
+            local target="$selected"
+            local source="$merge_src"
+            tput cup $(( rows - 1 )) 0; tput el
+            printf ' \e[30;46m MERGE \e[0m Merge %s into %s? %s(y/n)%s ' "$source" "$target" "$B" "$R"
+            IFS= read -rsn1 k
+            if [[ $k == [yYoO] ]]; then
+                if git checkout "$target" >/dev/null 2>&1 && git merge --no-edit "$source" >/dev/null 2>&1; then
+                    current=$(git branch --show-current)
+                    merge_src=""
+                    merge_note="merged $source into $target"
+                    continue
+                else
+                    merge_note="merge failed: $source -> $target"
+                    merge_src=""
+                    continue
+                fi
+            fi
+            merge_src=""
+            continue
         fi
     done
 
