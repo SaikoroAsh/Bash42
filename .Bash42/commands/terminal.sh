@@ -91,11 +91,19 @@ nav() {
 
 	_nav_read_key() {
 		local __out_name="$1"
+		local timeout_seconds="${2:-0}"
 		local ch seq
-		IFS= read -r -s -N 1 ch
-		if [[ -z "$ch" ]]; then
-			printf -v "$__out_name" '%s' $'\n'
-			return
+		if [[ "$timeout_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] && [[ "$timeout_seconds" != "0" ]]; then
+			if ! IFS= read -r -s -N 1 -t "$timeout_seconds" ch; then
+				printf -v "$__out_name" '%s' ""
+				return 1
+			fi
+		else
+			IFS= read -r -s -N 1 ch
+			if [[ -z "$ch" ]]; then
+				printf -v "$__out_name" '%s' $'\n'
+				return
+			fi
 		fi
 		if [[ "$ch" == $'\e' ]]; then
 			seq="$ch"
@@ -162,6 +170,31 @@ nav() {
 				find "$dir" -maxdepth 1 -mindepth 1 ! -type d | sort
 			}
 		)
+	}
+
+	_nav_visible_len() {
+		local text="$1"
+		local i=0
+		local len=0
+		local ch
+		while (( i < ${#text} )); do
+			ch="${text:i:1}"
+			if [[ "$ch" == $'\033' ]]; then
+				((i++))
+				while (( i < ${#text} )); do
+					ch="${text:i:1}"
+					if [[ "$ch" =~ [A-Za-z] ]]; then
+						((i++))
+						break
+					fi
+					((i++))
+				done
+				continue
+			fi
+			((len++))
+			((i++))
+		done
+		printf '%s' "$len"
 	}
 
 	_nav_preview_lines() {
@@ -235,6 +268,7 @@ nav() {
 		shift 5
 		local -a entries=("$@")
 
+		printf '\033[H\033[2J\033[3J'
 		tput cup 0 0
 		local EL
 		EL="$(tput el)"
@@ -252,21 +286,28 @@ nav() {
 
 		printf -v rule '%*s' $(( term_cols - 2 )) ''; rule=${rule// /─}
 		local display_sel=$(( count > 0 ? sel + 1 : 0 ))
-		local header_text
-		header_text=$(printf ' %s%snav%s  %s⎇%s %s%s%s   %s   %s%d/%d entries%s' \
-			"$C_DIR" "$C_PATH" "$C_RESET" "$C_HINT" "$C_RESET" "$C_PATH" "$dir" "$C_RESET" "$C_HINT" "$C_RESET" "$display_sel" "$count" "$C_RESET")
-		local header_plain
-		header_plain=$(printf '%s' "$header_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-		local header_pad=$(( term_cols - ${#header_plain} ))
-		(( header_pad < 0 )) && header_pad=0
-		printf '%b' "$header_text"
-		printf '%*s' "$header_pad" ''
-		printf '\n'
+		local prefix_text
+		prefix_text=$(printf ' %s%snav%s  %s⎇%s ' "$C_DIR" "$C_PATH" "$C_RESET" "$C_HINT" "$C_RESET")
+		local prefix_plain_len
+		prefix_plain_len=$(_nav_visible_len "$prefix_text")
+		local suffix_text
+		suffix_text=$(printf '%s  %s%d/%d entries%s' "$C_HINT" "$C_RESET" "$display_sel" "$count" "$C_RESET")
+		local suffix_plain_len
+		suffix_plain_len=$(_nav_visible_len "$suffix_text")
+		local path_display="$dir"
+		local path_budget=$(( term_cols - prefix_plain_len - suffix_plain_len - 2 ))
+		(( path_budget < 0 )) && path_budget=0
+		if (( ${#path_display} > path_budget )); then
+			path_display="${path_display: -$path_budget}"
+		fi
+		local pad_count=$(( term_cols - prefix_plain_len - ${#path_display} - suffix_plain_len ))
+		(( pad_count < 0 )) && pad_count=0
+		printf '%b%s%*s%b\n' "$prefix_text" "$path_display" "$pad_count" '' "$suffix_text"
 		local rule_text
 		rule_text=$(printf '%s%s%s' "$C_SEP" "$rule" "$C_RESET")
-		local rule_plain
-		rule_plain=$(printf '%s' "$rule_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-		local rule_pad=$(( term_cols - ${#rule_plain} ))
+		local rule_plain_len
+		rule_plain_len=$(_nav_visible_len "$rule_text")
+		local rule_pad=$(( term_cols - rule_plain_len ))
 		(( rule_pad < 0 )) && rule_pad=0
 		printf '%b' "$rule_text"
 		printf '%*s' "$rule_pad" ''
@@ -275,9 +316,9 @@ nav() {
 		if [[ "$count" -eq 0 ]]; then
 			local empty_text
 			empty_text=$(printf '  %s(répertoire vide)%s' "$C_EMPTY" "$C_RESET")
-			local empty_plain
-			empty_plain=$(printf '%s' "$empty_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-			local empty_pad=$(( term_cols - ${#empty_plain} ))
+			local empty_plain_len
+			empty_plain_len=$(_nav_visible_len "$empty_text")
+			local empty_pad=$(( term_cols - empty_plain_len ))
 			(( empty_pad < 0 )) && empty_pad=0
 			printf '%b' "$empty_text"
 			printf '%*s' "$empty_pad" ''
@@ -289,18 +330,18 @@ nav() {
 			done
 			local bottom_rule_text
 			bottom_rule_text=$(printf ' %s%s%s' "$C_SEP" "$rule" "$C_RESET")
-			local bottom_rule_plain
-			bottom_rule_plain=$(printf '%s' "$bottom_rule_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-			local bottom_rule_pad=$(( term_cols - ${#bottom_rule_plain} ))
+			local bottom_rule_plain_len
+			bottom_rule_plain_len=$(_nav_visible_len "$bottom_rule_text")
+			local bottom_rule_pad=$(( term_cols - bottom_rule_plain_len ))
 			(( bottom_rule_pad < 0 )) && bottom_rule_pad=0
 			printf '%b' "$bottom_rule_text"
 			printf '%*s' "$bottom_rule_pad" ''
 			printf '\n'
 			local help_text
 			help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' "$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
-			local help_plain
-			help_plain=$(printf '%s' "$help_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-			local help_pad=$(( term_cols - ${#help_plain} ))
+			local help_plain_len
+			help_plain_len=$(_nav_visible_len "$help_text")
+			local help_pad=$(( term_cols - help_plain_len ))
 			(( help_pad < 0 )) && help_pad=0
 			printf '%b' "$help_text"
 			printf '%*s' "$help_pad" ''
@@ -327,7 +368,9 @@ nav() {
 				label="${base}/"
 			fi
 			if [[ -n "${marked[$i]+x}" ]]; then
-				label="* ${label}"
+				label="● ${label}"
+			else
+				label="○ ${label}"
 			fi
 			if (( ${#label} > left_w - 5 )); then
 				label="${label:0:$(( left_w - 6 ))}…"
@@ -348,7 +391,13 @@ nav() {
 			right_lines+=("${C_PRE_TITLE} Nav keys${C_RESET}")
 			right_lines+=("${C_PRE_SEP}────────────────────${C_RESET}")
 			right_lines+=(" ${C_PRE_DIR}[↑↓]${C_RESET} move")
-			right_lines+=(" ${C_PRE_DIR}[space]${C_RESET} toggle")
+			right_lines+=(" ${C_PRE_DIR}[←→]${C_RESET} enter/parent")
+			right_lines+=(" ${C_PRE_DIR}[Enter]${C_RESET} open")
+			right_lines+=(" ${C_PRE_DIR}[Shift+Enter]${C_RESET} open dir")
+			right_lines+=(" ${C_PRE_DIR}[space/s]${C_RESET} toggle mark")
+			right_lines+=(" ${C_PRE_DIR}[r]${C_RESET} remove")
+			right_lines+=(" ${C_PRE_DIR}[c]${C_RESET} open code")
+			right_lines+=(" ${C_PRE_DIR}[x]${C_RESET} execute")
 			right_lines+=(" ${C_PRE_DIR}[h]${C_RESET} hidden")
 			right_lines+=(" ${C_PRE_DIR}[?]${C_RESET} help")
 			right_lines+=(" ${C_PRE_DIR}[q]${C_RESET} quit")
@@ -374,18 +423,18 @@ nav() {
 			row_text+="${C_PRE_SEP}|${C_RESET}"
 			if [[ "$i" -lt "$n_right" ]]; then
 				local preview_raw="${right_lines[$i]}"
-				local preview_plain
-				preview_plain=$(printf '%s' "$preview_raw" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-				local preview_pad=$(( right_w - ${#preview_plain} ))
+				local preview_plain_len
+				preview_plain_len=$(_nav_visible_len "$preview_raw")
+				local preview_pad=$(( right_w - preview_plain_len ))
 				(( preview_pad < 0 )) && preview_pad=0
 				row_text+="$preview_raw"
 				row_text+="$(printf '%*s' "$preview_pad" '')"
 			else
 				row_text+="$(printf '%*s' "$right_w" '')"
 			fi
-			local row_plain
-			row_plain=$(printf '%s' "$row_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-			local row_pad=$(( term_cols - ${#row_plain} ))
+			local row_plain_len
+			row_plain_len=$(_nav_visible_len "$row_text")
+			local row_pad=$(( term_cols - row_plain_len ))
 			(( row_pad < 0 )) && row_pad=0
 			printf '%b' "$row_text"
 			printf '%*s' "$row_pad" ''
@@ -406,9 +455,9 @@ nav() {
 			printf -v fill '%*s' "$v" ''; fill=${fill// /─}
 			local footer_text
 			footer_text=$(printf ' %s── %s %s%s' "$C_SEP" "$txt" "$fill" "$C_RESET")
-			local footer_plain
-			footer_plain=$(printf '%s' "$footer_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-			local footer_pad=$(( term_cols - ${#footer_plain} ))
+			local footer_plain_len
+			footer_plain_len=$(_nav_visible_len "$footer_text")
+			local footer_pad=$(( term_cols - footer_plain_len ))
 			(( footer_pad < 0 )) && footer_pad=0
 			printf '%b' "$footer_text"
 			printf '%*s' "$footer_pad" ''
@@ -416,25 +465,336 @@ nav() {
 		else
 			local bottom_rule_text
 			bottom_rule_text=$(printf ' %s%s%s' "$C_SEP" "$rule" "$C_RESET")
-			local bottom_rule_plain
-			bottom_rule_plain=$(printf '%s' "$bottom_rule_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-			local bottom_rule_pad=$(( term_cols - ${#bottom_rule_plain} ))
+			local bottom_rule_plain_len
+			bottom_rule_plain_len=$(_nav_visible_len "$bottom_rule_text")
+			local bottom_rule_pad=$(( term_cols - bottom_rule_plain_len ))
 			(( bottom_rule_pad < 0 )) && bottom_rule_pad=0
 			printf '%b' "$bottom_rule_text"
 			printf '%*s' "$bottom_rule_pad" ''
 			printf '\n'
 		fi
 
+		if [[ -n "$status_msg" ]]; then
+			local status_text
+			status_text=$(printf ' %s%s%s' "$C_HINT" "$status_msg" "$C_RESET")
+			local status_plain_len
+			status_plain_len=$(_nav_visible_len "$status_text")
+			local status_pad=$(( term_cols - status_plain_len ))
+			(( status_pad < 0 )) && status_pad=0
+			printf '%b' "$status_text"
+			printf '%*s' "$status_pad" ''
+			printf '\n'
+		fi
+
 		local help_text
 		help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' \
 			"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
-		local help_plain
-		help_plain=$(printf '%s' "$help_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
-		local help_pad=$(( term_cols - ${#help_plain} ))
+		local help_plain_len
+		help_plain_len=$(_nav_visible_len "$help_text")
+		local help_pad=$(( term_cols - help_plain_len ))
 		(( help_pad < 0 )) && help_pad=0
 		printf '%b' "$help_text"
 		printf '%*s' "$help_pad" ''
 		printf '\n'
+	}
+
+	_nav_handle_key() {
+		local key="$1"
+		if [[ "$key" == $'\e' ]]; then
+			_nav_cleanup
+			trap - EXIT INT TERM
+			return 0
+		fi
+		if [[ "$key" == $'\e['* || "$key" == $'\eO'* ]]; then
+			if _nav_is_shift_enter "$key"; then
+				_nav_cleanup
+				trap - EXIT INT TERM
+				cd "$current_dir" || return
+				return 0
+			fi
+			if _nav_is_enter "$key"; then
+				if [[ "$count" -eq 0 ]]; then
+					_nav_cleanup
+					trap - EXIT INT TERM
+					cd "$current_dir" || return
+					return 0
+				fi
+				local target="${entries[$selected]}"
+				if [[ -d "$target" ]]; then
+					_nav_cleanup
+					trap - EXIT INT TERM
+					cd "$target" || return
+					return 0
+				else
+					_nav_cleanup
+					trap - EXIT INT TERM
+					_nav_open "$target"
+					cd "$current_dir" || return
+					return 0
+				fi
+			fi
+			case "$key" in
+				$'\e[A'|$'\e[1;2A')
+					[[ "$selected" -gt 0 ]] && (( selected-- ))
+					return 0
+					;;
+				$'\e[B'|$'\e[1;2B')
+					[[ "$count" -gt 0 && "$selected" -lt $(( count - 1 )) ]] && (( selected++ ))
+					return 0
+					;;
+				$'\e[C'|$'\e[1;2C')
+					if [[ "$count" -gt 0 && -d "${entries[$selected]}" ]]; then
+						current_dir="${entries[$selected]}"
+						selected=0
+						viewport_start=0
+						marked=()
+						marked_order=()
+					fi
+					return 0
+					;;
+				$'\e[D'|$'\e[1;2D')
+					local parent
+					parent="$(dirname "$current_dir")"
+					if [[ "$parent" != "$current_dir" ]]; then
+						local came_from="${current_dir##*/}"
+						current_dir="$parent"
+						selected=0
+						viewport_start=0
+						marked=()
+						marked_order=()
+						mapfile -t entries < <(_nav_list "$current_dir")
+						need_relist=0
+						local pi
+						for (( pi=0; pi<${#entries[@]}; pi++ )); do
+							if [[ "${entries[$pi]##*/}" == "$came_from" ]]; then
+								selected="$pi"
+								break
+							fi
+						done
+						local pterm_lines
+						pterm_lines="$(tput lines)"
+						local pvp_size=$(( pterm_lines - 7 ))
+						[[ "$pvp_size" -lt 1 ]] && pvp_size=1
+						viewport_start=0
+						if [[ "$selected" -ge "$pvp_size" ]]; then
+							viewport_start=$(( selected - pvp_size + 1 ))
+						fi
+					fi
+					return 0
+					;;
+				*)
+					;;
+				esac
+		fi
+
+		case "$key" in
+			q|Q)
+				_nav_cleanup
+				trap - EXIT INT TERM
+				return 0
+				;;
+			h|H)
+				show_hidden=$(( 1 - show_hidden ))
+				selected=0
+				viewport_start=0
+				marked=()
+				marked_order=()
+				status_msg="Hidden files: $([[ "$show_hidden" -eq 1 ]] && printf 'on' || printf 'off')"
+				need_relist=1
+				return 0
+				;;
+			c|C)
+				if [[ "$count" -gt 0 ]]; then
+					local open_path
+					if [[ -d "${entries[$selected]}" ]]; then
+						open_path="${entries[$selected]}"
+					else
+						open_path="$current_dir"
+					fi
+					_nav_cleanup
+					trap - EXIT INT TERM
+					code "$open_path" &>/dev/null &
+				fi
+				return 0
+				;;
+			x|X)
+				if [[ "$count" -gt 0 && ! -d "${entries[$selected]}" ]]; then
+					local target="${entries[$selected]}"
+					local ext="${target##*.}"
+					local -a cmd=()
+					case "$ext" in
+						py)
+							cmd=(python3 -- "$target")
+							;;
+						sh|bash|zsh)
+							cmd=(bash -- "$target")
+							;;
+						*)
+							if [[ -x "$target" ]]; then
+								cmd=("$target")
+							else
+								cmd=(bash -- "$target")
+							fi
+							;;
+					esac
+					tput rmcup
+					tput cnorm
+					printf 'Exécuter : %s\n' "${cmd[*]}"
+					"${cmd[@]}"
+					printf "\n[Terminé — appuie sur Entrée]"
+					read -r
+					stty echo 2>/dev/null
+					tput smcup
+					tput civis
+					need_relist=1
+					cache_dir=""
+					cache_selected=-1
+					cache_viewport=-1
+					cache_cols=-1
+					cache_lines=-1
+				fi
+				return 0
+				;;
+			'?')
+				help_visible=$(( 1 - help_visible ))
+				status_msg=""
+				if [[ "$help_visible" -eq 1 ]]; then
+					status_msg="Help visible"
+				fi
+				need_relist=1
+				return 0
+				;;
+			' ')
+				if [[ "$count" -gt 0 ]]; then
+					if [[ -n "${marked[$selected]+x}" ]]; then
+						unset 'marked[$selected]'
+						for idx in "${!marked_order[@]}"; do
+							if [[ "${marked_order[$idx]}" == "$selected" ]]; then
+								unset 'marked_order[$idx]'
+								break
+							fi
+						done
+						status_msg="Selection cleared"
+					else
+						marked["$selected"]=1
+						marked_order+=("$selected")
+						status_msg="Selected ${#marked_order[@]} item(s)"
+					fi
+					need_relist=1
+				fi
+				return 0
+				;;
+			s|S)
+				if [[ "$count" -gt 0 ]]; then
+					if [[ -n "${marked[$selected]+x}" ]]; then
+						unset 'marked[$selected]'
+						for idx in "${!marked_order[@]}"; do
+							if [[ "${marked_order[$idx]}" == "$selected" ]]; then
+								unset 'marked_order[$idx]'
+								break
+							fi
+						done
+						status_msg="Selection cleared"
+					else
+						marked["$selected"]=1
+						marked_order+=("$selected")
+						status_msg="Selected ${#marked_order[@]} item(s)"
+					fi
+					need_relist=1
+				fi
+				return 0
+				;;
+			r|R)
+				if [[ "$delete_prompt_active" -eq 1 ]]; then
+					status_msg="Deletion already pending"
+					return 0
+				fi
+				if [[ "$count" -eq 0 ]]; then
+					status_msg="Nothing to remove"
+					return 0
+				fi
+				local -a remove_targets=()
+				if [[ ${#marked_order[@]} -gt 0 ]]; then
+					for idx in "${marked_order[@]}"; do
+						remove_targets+=("${entries[$idx]}")
+					done
+				else
+					remove_targets+=("${entries[$selected]}")
+				fi
+				local valid=1
+				local target
+				for target in "${remove_targets[@]}"; do
+					if [[ ! -e "$target" && ! -L "$target" ]]; then
+						status_msg="Missing target: ${target##*/}"
+						valid=0
+						break
+					fi
+				done
+				if [[ "$valid" -eq 0 ]]; then
+					return 0
+				fi
+				delete_prompt_active=1
+				status_msg="Delete ${#remove_targets[@]} item(s)? [y/N]"
+				need_relist=1
+				cache_status=""
+				_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
+				local answer
+				while true; do
+					_nav_read_key answer
+					case "$answer" in
+						y|Y)
+							for target in "${remove_targets[@]}"; do
+								rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
+							done
+							marked=()
+							marked_order=()
+							selected=0
+							viewport_start=0
+							status_msg="Deleted ${#remove_targets[@]} item(s)"
+							need_relist=1
+							delete_prompt_active=0
+							break
+							;;
+						n|N|$'\e')
+							status_msg="Deletion cancelled"
+							need_relist=1
+							delete_prompt_active=0
+							break
+							;;
+						*)
+							# Ignore all other keys while the delete confirmation is waiting.
+							continue
+							;;
+					esac
+				done
+				return 0
+				;;
+			$'\n'|$'\r')
+				if [[ "$count" -eq 0 ]]; then
+					_nav_cleanup
+					trap - EXIT INT TERM
+					cd "$current_dir" || return
+					return 0
+				fi
+				local target="${entries[$selected]}"
+				if [[ -d "$target" ]]; then
+					_nav_cleanup
+					trap - EXIT INT TERM
+					cd "$target" || return
+					return 0
+				else
+					_nav_cleanup
+					trap - EXIT INT TERM
+					_nav_open "$target"
+					cd "$current_dir" || return
+					return 0
+				fi
+				;;
+			*)
+				status_msg=""
+				;;
+			esac
+		return 0
 	}
 
 	local key seq ch
@@ -484,293 +844,19 @@ nav() {
 			need_relist=0
 		fi
 
-		_nav_read_key key
-		if [[ "$key" == $'\e' ]]; then
-			_nav_cleanup
-			trap - EXIT INT TERM
-			return 0
-		fi
-		if [[ "$key" == $'\e['* || "$key" == $'\eO'* ]]; then
-			if _nav_is_shift_enter "$key"; then
-				_nav_cleanup
-				trap - EXIT INT TERM
-				cd "$current_dir" || return
-				return 0
+		local -a queued_keys=()
+		while true; do
+			if ! _nav_read_key key 0.03; then
+				break
 			fi
-			if _nav_is_enter "$key"; then
-				if [[ "$count" -eq 0 ]]; then
-					_nav_cleanup
-					trap - EXIT INT TERM
-					cd "$current_dir" || return
-					return 0
-				fi
-				local target="${entries[$selected]}"
-				if [[ -d "$target" ]]; then
-					_nav_cleanup
-					trap - EXIT INT TERM
-					cd "$target" || return
-					return 0
-				else
-					_nav_cleanup
-					trap - EXIT INT TERM
-					_nav_open "$target"
-					cd "$current_dir" || return
-					return 0
-				fi
-			fi
-			case "$key" in
-				$'\e[A'|$'\e[1;2A')
-					[[ "$selected" -gt 0 ]] && (( selected-- ))
-					continue
-					;;
-				$'\e[B'|$'\e[1;2B')
-					[[ "$count" -gt 0 && "$selected" -lt $(( count - 1 )) ]] && (( selected++ ))
-					continue
-					;;
-				$'\e[C'|$'\e[1;2C')
-					if [[ "$count" -gt 0 && -d "${entries[$selected]}" ]]; then
-						current_dir="${entries[$selected]}"
-						selected=0
-						viewport_start=0
-						marked=()
-						marked_order=()
-						# Keep clipboard and status feedback intact while navigating.
-					fi
-					continue
-					;;
-				$'\e[D'|$'\e[1;2D')
-					local parent
-					parent="$(dirname "$current_dir")"
-					if [[ "$parent" != "$current_dir" ]]; then
-						local came_from="${current_dir##*/}"
-						current_dir="$parent"
-						selected=0
-						viewport_start=0
-						marked=()
-						marked_order=()
-						# Keep clipboard and success messages while leaving the directory.
-						mapfile -t entries < <(_nav_list "$current_dir")
-						need_relist=0
-						local pi
-						for (( pi=0; pi<${#entries[@]}; pi++ )); do
-							if [[ "${entries[$pi]##*/}" == "$came_from" ]]; then
-								selected="$pi"
-								break
-							fi
-						done
-						local pterm_lines
-						pterm_lines="$(tput lines)"
-						local pvp_size=$(( pterm_lines - 7 ))
-						[[ "$pvp_size" -lt 1 ]] && pvp_size=1
-						viewport_start=0
-						if [[ "$selected" -ge "$pvp_size" ]]; then
-							viewport_start=$(( selected - pvp_size + 1 ))
-						fi
-					fi
-					continue
-					;;
-				*)
-					;;
-				esac
+			queued_keys+=("$key")
+		done
+		if (( ${#queued_keys[@]} == 0 )); then
+			continue
 		fi
-
-		case "$key" in
-			q|Q)
-				_nav_cleanup
-				trap - EXIT INT TERM
-				return 0
-				;;
-			h|H)
-				show_hidden=$(( 1 - show_hidden ))
-				selected=0
-				viewport_start=0
-				marked=()
-				marked_order=()
-				status_msg="Hidden files: $([[ "$show_hidden" -eq 1 ]] && printf 'on' || printf 'off')"
-				need_relist=1
-				continue
-				;;
-			c|C)
-				if [[ "$count" -gt 0 ]]; then
-					local open_path
-					if [[ -d "${entries[$selected]}" ]]; then
-						open_path="${entries[$selected]}"
-					else
-						open_path="$current_dir"
-					fi
-					_nav_cleanup
-					trap - EXIT INT TERM
-					code "$open_path" &>/dev/null &
-				fi
-				return 0
-				;;
-			x|X)
-				if [[ "$count" -gt 0 && ! -d "${entries[$selected]}" ]]; then
-					local target="${entries[$selected]}"
-					local ext="${target##*.}"
-					local cmd
-					if [[ "$ext" == "py" ]]; then
-						cmd="python3 "$target""
-					else
-						cmd=""$target""
-					fi
-					tput rmcup
-					tput cnorm
-					printf "Exécuter : %s " "$cmd"
-					local extra_args
-					IFS= read -r extra_args
-					eval "$cmd $extra_args"
-					printf "\n[Terminé — appuie sur Entrée]"
-					read -r
-					stty echo 2>/dev/null
-					tput smcup
-					tput civis
-					need_relist=1
-					cache_dir=""
-					cache_selected=-1
-					cache_viewport=-1
-					cache_cols=-1
-					cache_lines=-1
-				fi
-				;;
-			'?')
-				help_visible=$(( 1 - help_visible ))
-				status_msg=""
-				if [[ "$help_visible" -eq 1 ]]; then
-					status_msg="Help visible"
-				fi
-				need_relist=1
-				continue
-				;;
-			' ')
-				if [[ "$count" -gt 0 ]]; then
-					if [[ -n "${marked[$selected]+x}" ]]; then
-						unset 'marked[$selected]'
-						for idx in "${!marked_order[@]}"; do
-							if [[ "${marked_order[$idx]}" == "$selected" ]]; then
-								unset 'marked_order[$idx]'
-								break
-							fi
-						done
-						status_msg="Selection cleared"
-					else
-						marked["$selected"]=1
-						marked_order+=("$selected")
-						status_msg="Selected ${#marked_order[@]} item(s)"
-					fi
-					need_relist=1
-				fi
-				continue
-				;;
-			s|S)
-				if [[ "$count" -gt 0 ]]; then
-					if [[ -n "${marked[$selected]+x}" ]]; then
-						unset 'marked[$selected]'
-						for idx in "${!marked_order[@]}"; do
-							if [[ "${marked_order[$idx]}" == "$selected" ]]; then
-								unset 'marked_order[$idx]'
-								break
-							fi
-						done
-						status_msg="Selection cleared"
-					else
-						marked["$selected"]=1
-						marked_order+=("$selected")
-						status_msg="Selected ${#marked_order[@]} item(s)"
-					fi
-					need_relist=1
-				fi
-				continue
-				;;
-			r|R)
-				if [[ "$delete_prompt_active" -eq 1 ]]; then
-					status_msg="Deletion already pending"
-					continue
-				fi
-				if [[ "$count" -eq 0 ]]; then
-					status_msg="Nothing to remove"
-					continue
-				fi
-				local -a remove_targets=()
-				if [[ ${#marked_order[@]} -gt 0 ]]; then
-					for idx in "${marked_order[@]}"; do
-						remove_targets+=("${entries[$idx]}")
-					done
-				else
-					remove_targets+=("${entries[$selected]}")
-				fi
-				local valid=1
-				local target
-				for target in "${remove_targets[@]}"; do
-					if [[ ! -e "$target" && ! -L "$target" ]]; then
-						status_msg="Missing target: ${target##*/}"
-						valid=0
-						break
-					fi
-				done
-				if [[ "$valid" -eq 0 ]]; then
-					continue
-				fi
-				delete_prompt_active=1
-				status_msg="Delete ${#remove_targets[@]} item(s)? [y/N]"
-				need_relist=1
-				cache_status=""
-				_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
-				local answer
-				while true; do
-					_nav_read_key answer
-					case "$answer" in
-						y|Y)
-							for target in "${remove_targets[@]}"; do
-								rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
-							done
-							marked=()
-							marked_order=()
-							selected=0
-							viewport_start=0
-							status_msg="Deleted ${#remove_targets[@]} item(s)"
-							need_relist=1
-							delete_prompt_active=0
-							break
-							;;
-						n|N|$'\e')
-							status_msg="Deletion cancelled"
-							need_relist=1
-							delete_prompt_active=0
-							break
-							;;
-						*)
-							# Ignore all other keys while the delete confirmation is waiting.
-							continue
-							;;
-					esac
-				done
-				;;
-			$'\n'|$'\r')
-				if [[ "$count" -eq 0 ]]; then
-					_nav_cleanup
-					trap - EXIT INT TERM
-					cd "$current_dir" || return
-					return 0
-				fi
-				local target="${entries[$selected]}"
-				if [[ -d "$target" ]]; then
-					_nav_cleanup
-					trap - EXIT INT TERM
-					cd "$target" || return
-					return 0
-				else
-					_nav_cleanup
-					trap - EXIT INT TERM
-					_nav_open "$target"
-					cd "$current_dir" || return
-					return 0
-				fi
-				;;
-			*)
-				status_msg=""
-				;;
-			esac
+		for key in "${queued_keys[@]}"; do
+			_nav_handle_key "$key"
+		done
 	done
 }
 
