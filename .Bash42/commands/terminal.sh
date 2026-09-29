@@ -268,7 +268,10 @@ nav() {
 		shift 5
 		local -a entries=("$@")
 
-		printf '\033[H\033[2J\033[3J'
+		# Avoid a full clear on every redraw; it causes the blank flash.
+		# Reusing the alternate screen buffer and moving the cursor to the
+		# top is enough to repaint the nav UI without visible flicker.
+		printf '\033[H'
 		tput cup 0 0
 		local EL
 		EL="$(tput el)"
@@ -371,6 +374,9 @@ nav() {
 				label="● ${label}"
 			else
 				label="○ ${label}"
+			fi
+			if [[ "$i" -eq "$sel" ]]; then
+				label=" ${label}"
 			fi
 			if (( ${#label} > left_w - 5 )); then
 				label="${label:0:$(( left_w - 6 ))}…"
@@ -486,16 +492,18 @@ nav() {
 			printf '\n'
 		fi
 
-		local help_text
-		help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' \
-			"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
-		local help_plain_len
-		help_plain_len=$(_nav_visible_len "$help_text")
-		local help_pad=$(( term_cols - help_plain_len ))
-		(( help_pad < 0 )) && help_pad=0
-		printf '%b' "$help_text"
-		printf '%*s' "$help_pad" ''
-		printf '\n'
+		if [[ "$help_visible" -eq 0 ]]; then
+			local help_text
+			help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' \
+				"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
+			local help_plain_len
+			help_plain_len=$(_nav_visible_len "$help_text")
+			local help_pad=$(( term_cols - help_plain_len ))
+			(( help_pad < 0 )) && help_pad=0
+			printf '%b' "$help_text"
+			printf '%*s' "$help_pad" ''
+			printf '\n'
+		fi
 	}
 
 	_nav_handle_key() {
@@ -503,34 +511,39 @@ nav() {
 		if [[ "$key" == $'\e' ]]; then
 			_nav_cleanup
 			trap - EXIT INT TERM
-			return 0
+			nav_exit_requested=1
+			return 1
 		fi
 		if [[ "$key" == $'\e['* || "$key" == $'\eO'* ]]; then
 			if _nav_is_shift_enter "$key"; then
 				_nav_cleanup
 				trap - EXIT INT TERM
 				cd "$current_dir" || return
-				return 0
+				nav_exit_requested=1
+				return 1
 			fi
 			if _nav_is_enter "$key"; then
 				if [[ "$count" -eq 0 ]]; then
 					_nav_cleanup
 					trap - EXIT INT TERM
 					cd "$current_dir" || return
-					return 0
+					nav_exit_requested=1
+					return 1
 				fi
 				local target="${entries[$selected]}"
 				if [[ -d "$target" ]]; then
 					_nav_cleanup
 					trap - EXIT INT TERM
 					cd "$target" || return
-					return 0
+					nav_exit_requested=1
+					return 1
 				else
 					_nav_cleanup
 					trap - EXIT INT TERM
 					_nav_open "$target"
 					cd "$current_dir" || return
-					return 0
+					nav_exit_requested=1
+					return 1
 				fi
 			fi
 			case "$key" in
@@ -591,7 +604,8 @@ nav() {
 			q|Q)
 				_nav_cleanup
 				trap - EXIT INT TERM
-				return 0
+				nav_exit_requested=1
+				return 1
 				;;
 			h|H)
 				show_hidden=$(( 1 - show_hidden ))
@@ -798,6 +812,7 @@ nav() {
 	}
 
 	local key seq ch
+	local nav_exit_requested=0
 	local viewport_start=0
 	local cache_dir=""
 	local cache_selected=-1
@@ -856,6 +871,9 @@ nav() {
 		fi
 		for key in "${queued_keys[@]}"; do
 			_nav_handle_key "$key"
+			if [[ "$nav_exit_requested" -eq 1 ]]; then
+				return 0
+			fi
 		done
 	done
 }
