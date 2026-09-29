@@ -88,71 +88,67 @@ gbr() {
     local current=$(git branch --show-current)
     local merge_src=""
     local merge_note=""
-    # build a prefix trie from branch names (split by '/'), preserving order
-    declare -A children=()
-    declare -A is_branch=()
-    declare -A fullbranch=()
-    local ROOT_KEY="__GIT_ROOT__"
-    for br in "${branches[@]}"; do
-        IFS='/' read -ra parts <<< "$br"
-        parent=""
-        prefix=""
-        for part in "${parts[@]}"; do
-            if [[ -z $prefix ]]; then prefix="$part"; else prefix="$prefix/$part"; fi
-            parent_key=${parent:-$ROOT_KEY}
-            children["$parent_key"]+="$prefix"$'\n'
-            parent="$prefix"
-        done
-        is_branch["$prefix"]=1
-        fullbranch["$prefix"]="$br"
-    done
+    local note=""
 
-    # render trie into flat display arrays with tree connectors
-    declare -a display_label=() display_branch=() display_depth=()
-    declare -a parent_index=() first_child=()
-    _display_idx=0
-    declare -a anc=()
-    _gbr_render() {
-        local node="$1" depth="$2" parent_idx="$3"
-        local kids_raw="${children[$node]}"
-        IFS=$'\n' read -r -a kids <<< "$kids_raw"
-        local count=${#kids[@]}
-        if (( count == 1 )); then
-            if [[ -z "${kids[0]}" ]]; then count=0; fi
-        fi
-        for ((j=0;j<count;j++)); do
-            local child="${kids[j]}"
-            local last=0; (( j == count - 1 )) && last=1
-            local conn=""
-            for ((k=0;k<depth;k++)); do
-                if [[ "${anc[k]}" == "1" ]]; then conn+="   "; else conn+="│  "; fi
-            done
-            if (( depth > 0 )); then
-                if (( last )); then conn+="└─ "; else conn+="├─ "; fi
-            fi
-            local idx=$_display_idx
-            display_label[idx]="${conn}${child##*/}"
-            if [[ -n "${is_branch[$child]}" ]]; then display_branch[idx]="${fullbranch[$child]}"; else display_branch[idx]=""; fi
-            display_depth[idx]="$depth"
-            parent_index[idx]="$parent_idx"
-            if [[ "$parent_idx" =~ ^-?[0-9]+$ ]] && (( parent_idx >= 0 )); then
-                if [[ -z "${first_child[$parent_idx]+x}" ]]; then
-                    first_child[$parent_idx]="$idx"
+    _gbr_rebuild_display() {
+        declare -A parent_of child_map seen
+        for br in "${branches[@]}"; do
+            parent_of["$br"]=""
+            child_map["$br"]=""
+            seen["$br"]=0
+        done
+
+        for br in "${branches[@]}"; do
+            local best=""
+            for other in "${branches[@]}"; do
+                [[ "$other" == "$br" ]] && continue
+                if [[ "$br" == "$other"/* ]]; then
+                    if [[ -z "$best" || ${#other} -gt ${#best} ]]; then
+                        best="$other"
+                    fi
                 fi
+            done
+            if [[ -n "$best" ]]; then
+                parent_of["$br"]="$best"
+                child_map["$best"]+="$br"$'\n'
             fi
-            ((_display_idx++))
-            anc[depth]="$last"
-            _gbr_render "$child" $((depth+1)) $idx
-            anc[depth]=0
+        done
+
+        display_label=()
+        display_branch=()
+        _gbr_emit() {
+            local node="$1" depth="$2"
+            [[ "${seen[$node]}" == "1" ]] && return
+            seen["$node"]=1
+            local idx=${#display_label[@]}
+            display_label[idx]="$(printf '%*s' $((depth * 2)) '')${node##*/}"
+            display_branch[idx]="$node"
+            local -a kids=()
+            if [[ -n "${child_map[$node]}" ]]; then
+                IFS=$'\n' read -r -d '' -a kids < <(printf '%s\0' "${child_map[$node]}")
+            fi
+            for child in "${kids[@]}"; do
+                [[ -z "$child" ]] && continue
+                _gbr_emit "$child" $((depth + 1))
+            done
+        }
+
+        for br in "${branches[@]}"; do
+            if [[ -z "${parent_of[$br]}" ]]; then
+                _gbr_emit "$br" 0
+            fi
+        done
+
+        for br in "${branches[@]}"; do
+            [[ "${seen[$br]}" == "1" ]] && continue
+            _gbr_emit "$br" 0
         done
     }
 
-    _gbr_render "$ROOT_KEY" 0 -1
+    _gbr_rebuild_display
     local cur=0 top=0
     local count_display=${#display_label[@]}
     for i in "${!display_branch[@]}"; do [[ "${display_branch[$i]}" == "$current" ]] && cur=$i; done
-    # ensure parent_index and first_child arrays exist for navigation
-    :
 
     local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m' REV=$'\e[7m'
     local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' BLU=$'\e[34m' CYN=$'\e[36m'
@@ -179,16 +175,12 @@ gbr() {
         for (( i = top; i < end; i++ )); do
             local bg ptr box lbl branchname
             bg=""; ptr=" "
-            if [ $i -eq $cur ]; then bg=$BG; ptr="${CYN}▌"; fi
+            if [[ $i -eq $cur ]]; then bg=$BG; ptr="${CYN}▌"; fi
             branchname="${display_branch[$i]}"
             if [[ -n $branchname ]]; then
-                if [[ "$branchname" == "$merge_src" ]]; then
-                    box="${YEL}●"
-                elif [[ "$branchname" == "$current" ]]; then
-                    box="${GRN}●"
-                else
-                    box="${D}○"
-                fi
+                if [[ "$branchname" == "$merge_src" ]]; then box="${YEL}●"
+                elif [[ "$branchname" == "$current" ]]; then box="${GRN}●"
+                else box="${D}○"; fi
             else
                 box="${D}○"
             fi
@@ -199,20 +191,17 @@ gbr() {
         for (( i = end - top; i < vis; i++ )); do echo; done
 
         if [[ -n $merge_note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$merge_note" "$R"; else echo; fi
-        printf ' %s↑↓%s move  %senter%s checkout  %sM%s merge  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R" "$B" "$R"
+        if [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
+        printf ' %s↑↓%s move  %senter%s checkout  %sM%s merge  %sR%s delete  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R" "$B" "$R" "$B" "$R"
 
         IFS= read -rsn1 k
+        note=""
         merge_note=""
         if [[ $k == $'\e' ]]; then
             read -rsn2 -t 0.05 k || true
             case $k in
                 "[A") (( cur > 0 )) && (( cur-- )) ;;
                 "[B") (( cur < count_display - 1 )) && (( cur++ )) ;;
-                "[C") # right -> first child if available
-                    if [[ -n "${first_child[$cur]}" ]]; then cur=${first_child[$cur]}; fi ;;
-                "[D") # left -> parent if available
-                    pidx=${parent_index[$cur]}
-                    if [[ "$pidx" =~ ^-?[0-9]+$ ]] && (( pidx >= 0 )); then cur=$pidx; fi ;;
             esac
         elif [[ $k == "" ]]; then
             break
@@ -243,23 +232,53 @@ gbr() {
             if [[ $k == [yYoO] ]]; then
                 if git checkout "$target" >/dev/null 2>&1 && git merge --no-edit "$source" >/dev/null 2>&1; then
                     current=$(git branch --show-current)
+                    mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)
+                    _gbr_rebuild_display
+                    count_display=${#display_label[@]}
                     merge_src=""
                     merge_note="merged $source into $target"
                     continue
                 else
-                    merge_note="merge failed: $source -> $target"
                     merge_src=""
+                    merge_note="merge failed: $source -> $target"
                     continue
                 fi
             fi
             merge_src=""
+            continue
+        elif [[ $k == r || $k == R ]]; then
+            local target="${display_branch[$cur]}"
+            if [[ -z "$target" ]]; then
+                note="no branch selected"
+                continue
+            fi
+            if [[ "$target" == "$current" ]]; then
+                note="cannot delete current branch"
+                continue
+            fi
+            tput cup $(( rows - 1 )) 0; tput el
+            printf ' \e[30;41m DELETE \e[0m Delete branch %s? %s(y/n)%s ' "$target" "$B" "$R"
+            IFS= read -rsn1 k
+            if [[ $k == [yYoO] ]]; then
+                if git branch -D -- "$target" >/dev/null 2>&1; then
+                    mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)
+                    current=$(git branch --show-current)
+                    _gbr_rebuild_display
+                    count_display=${#display_label[@]}
+                    cur=0
+                    for i in "${!display_branch[@]}"; do [[ "${display_branch[$i]}" == "$current" ]] && cur=$i; done
+                    note="branch deleted"
+                    continue
+                else
+                    note="could not delete $target"
+                fi
+            fi
             continue
         fi
     done
 
     tput cnorm; tput rmcup; stty "$old"
     (( cur < 0 )) && return 0
-    # map selected display index back to branch name (if any)
     sel_branch="${display_branch[$cur]}"
     if [[ -z $sel_branch ]]; then echo "No branch at selection"; return 1; fi
     git checkout "$sel_branch"
