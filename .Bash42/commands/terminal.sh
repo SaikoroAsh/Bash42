@@ -967,20 +967,23 @@ nav() {
 					_nav_cleanup
 					trap - EXIT INT TERM
 					cd "$current_dir" || return
-					return 0
+					nav_exit_requested=1
+					return 1
 				fi
 				local target="${entries[$selected]}"
 				if [[ -d "$target" ]]; then
 					_nav_cleanup
 					trap - EXIT INT TERM
 					cd "$target" || return
-					return 0
+					nav_exit_requested=1
+					return 1
 				else
 					_nav_cleanup
 					trap - EXIT INT TERM
 					_nav_open "$target"
 					cd "$current_dir" || return
-					return 0
+					nav_exit_requested=1
+					return 1
 				fi
 				;;
 			*)
