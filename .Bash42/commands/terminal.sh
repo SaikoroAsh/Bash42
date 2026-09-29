@@ -236,7 +236,6 @@ nav() {
 		local -a entries=("$@")
 
 		tput cup 0 0
-		tput ed
 		local EL
 		EL="$(tput el)"
 
@@ -252,13 +251,60 @@ nav() {
 		[[ "$end" -gt "$count" ]] && end="$count"
 
 		printf -v rule '%*s' $(( term_cols - 2 )) ''; rule=${rule// /─}
-		printf ' %s%snav%s  %s⎇%s %s%s%s   %s   %s%d/%d entries%s\n' \
-			"$C_DIR" "$C_PATH" "$C_RESET" "$C_HINT" "$C_RESET" "$C_PATH" "$dir" "$C_RESET" "$C_HINT" "$C_RESET" "$(( sel + 1 ))" "$count" "$C_RESET"
-		printf ' %s%s%s\n' "$C_SEP" "$rule" "$C_RESET"
+		local display_sel=$(( count > 0 ? sel + 1 : 0 ))
+		local header_text
+		header_text=$(printf ' %s%snav%s  %s⎇%s %s%s%s   %s   %s%d/%d entries%s' \
+			"$C_DIR" "$C_PATH" "$C_RESET" "$C_HINT" "$C_RESET" "$C_PATH" "$dir" "$C_RESET" "$C_HINT" "$C_RESET" "$display_sel" "$count" "$C_RESET")
+		local header_plain
+		header_plain=$(printf '%s' "$header_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+		local header_pad=$(( term_cols - ${#header_plain} ))
+		(( header_pad < 0 )) && header_pad=0
+		printf '%b' "$header_text"
+		printf '%*s' "$header_pad" ''
+		printf '\n'
+		local rule_text
+		rule_text=$(printf '%s%s%s' "$C_SEP" "$rule" "$C_RESET")
+		local rule_plain
+		rule_plain=$(printf '%s' "$rule_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+		local rule_pad=$(( term_cols - ${#rule_plain} ))
+		(( rule_pad < 0 )) && rule_pad=0
+		printf '%b' "$rule_text"
+		printf '%*s' "$rule_pad" ''
+		printf '\n'
 
 		if [[ "$count" -eq 0 ]]; then
-			printf '  %s(répertoire vide)%s\n' "$C_EMPTY" "$C_RESET"
-			tput ed
+			local empty_text
+			empty_text=$(printf '  %s(répertoire vide)%s' "$C_EMPTY" "$C_RESET")
+			local empty_plain
+			empty_plain=$(printf '%s' "$empty_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+			local empty_pad=$(( term_cols - ${#empty_plain} ))
+			(( empty_pad < 0 )) && empty_pad=0
+			printf '%b' "$empty_text"
+			printf '%*s' "$empty_pad" ''
+			printf '\n'
+			local empty_rows=$(( viewport_size - 2 ))
+			[[ "$empty_rows" -lt 1 ]] && empty_rows=1
+			for (( i=0; i<empty_rows; i++ )); do
+				printf '%*s\n' "$term_cols" ''
+			done
+			local bottom_rule_text
+			bottom_rule_text=$(printf ' %s%s%s' "$C_SEP" "$rule" "$C_RESET")
+			local bottom_rule_plain
+			bottom_rule_plain=$(printf '%s' "$bottom_rule_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+			local bottom_rule_pad=$(( term_cols - ${#bottom_rule_plain} ))
+			(( bottom_rule_pad < 0 )) && bottom_rule_pad=0
+			printf '%b' "$bottom_rule_text"
+			printf '%*s' "$bottom_rule_pad" ''
+			printf '\n'
+			local help_text
+			help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' "$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
+			local help_plain
+			help_plain=$(printf '%s' "$help_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+			local help_pad=$(( term_cols - ${#help_plain} ))
+			(( help_pad < 0 )) && help_pad=0
+			printf '%b' "$help_text"
+			printf '%*s' "$help_pad" ''
+			printf '\n'
 			return
 		fi
 
@@ -319,28 +365,37 @@ nav() {
 		[[ "$n_rows" -gt "$viewport_size" ]] && n_rows="$viewport_size"
 
 		for (( i=0; i<n_rows; i++ )); do
+			local row_text=''
 			if [[ "$i" -lt "$n_left" ]]; then
-				printf '%b' "${left_rendered[$i]}"
+				row_text+="${left_rendered[$i]}"
 			else
-				printf '%*s' "$left_w" ''
+				row_text+="$(printf '%*s' "$left_w" '')"
 			fi
-			printf '%s|%s' "$C_PRE_SEP" "$C_RESET"
+			row_text+="${C_PRE_SEP}|${C_RESET}"
 			if [[ "$i" -lt "$n_right" ]]; then
 				local preview_raw="${right_lines[$i]}"
 				local preview_plain
 				preview_plain=$(printf '%s' "$preview_raw" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
 				local preview_pad=$(( right_w - ${#preview_plain} ))
 				(( preview_pad < 0 )) && preview_pad=0
-				printf '%b' "$preview_raw"
-				printf '%*s' "$preview_pad" ''
+				row_text+="$preview_raw"
+				row_text+="$(printf '%*s' "$preview_pad" '')"
 			else
-				printf '%*s' "$right_w" ''
+				row_text+="$(printf '%*s' "$right_w" '')"
 			fi
+			local row_plain
+			row_plain=$(printf '%s' "$row_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+			local row_pad=$(( term_cols - ${#row_plain} ))
+			(( row_pad < 0 )) && row_pad=0
+			printf '%b' "$row_text"
+			printf '%*s' "$row_pad" ''
 			printf '\n'
 		done
 
 		for (( i = n_rows; i < viewport_size; i++ )); do
-			echo
+			local blank_line
+			printf -v blank_line '%*s' "$term_cols" ''
+			printf '%s\n' "$blank_line"
 		done
 
 		txt=""
@@ -349,14 +404,37 @@ nav() {
 		if [[ -n $txt ]]; then
 			v=$(( term_cols - 6 - ${#txt} )); (( v < 0 )) && v=0
 			printf -v fill '%*s' "$v" ''; fill=${fill// /─}
-			printf ' %s── %s %s%s\n' "$C_SEP" "$txt" "$fill" "$C_RESET"
+			local footer_text
+			footer_text=$(printf ' %s── %s %s%s' "$C_SEP" "$txt" "$fill" "$C_RESET")
+			local footer_plain
+			footer_plain=$(printf '%s' "$footer_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+			local footer_pad=$(( term_cols - ${#footer_plain} ))
+			(( footer_pad < 0 )) && footer_pad=0
+			printf '%b' "$footer_text"
+			printf '%*s' "$footer_pad" ''
+			printf '\n'
 		else
-			printf ' %s%s%s\n' "$C_SEP" "$rule" "$C_RESET"
+			local bottom_rule_text
+			bottom_rule_text=$(printf ' %s%s%s' "$C_SEP" "$rule" "$C_RESET")
+			local bottom_rule_plain
+			bottom_rule_plain=$(printf '%s' "$bottom_rule_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+			local bottom_rule_pad=$(( term_cols - ${#bottom_rule_plain} ))
+			(( bottom_rule_pad < 0 )) && bottom_rule_pad=0
+			printf '%b' "$bottom_rule_text"
+			printf '%*s' "$bottom_rule_pad" ''
+			printf '\n'
 		fi
 
-		printf ' %sPRESS %s[%s?%s]%s for help%s\n' \
-			"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET"
-		tput ed
+		local help_text
+		help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' \
+			"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
+		local help_plain
+		help_plain=$(printf '%s' "$help_text" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+		local help_pad=$(( term_cols - ${#help_plain} ))
+		(( help_pad < 0 )) && help_pad=0
+		printf '%b' "$help_text"
+		printf '%*s' "$help_pad" ''
+		printf '\n'
 	}
 
 	local key seq ch
