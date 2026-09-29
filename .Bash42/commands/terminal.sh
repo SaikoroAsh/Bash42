@@ -53,6 +53,185 @@ fm() {
     esac
 }
 
+# Hub: gsc-like full-screen links menu
+hub_ui() {
+	local labels=(
+		"42Next"
+		"Dashboard"
+		"Cluster Map"
+		"Dashboard SFP"
+		"RTFM"
+		"SteakOverflow"
+		"Lockers"
+	)
+	local urls=(
+		"https://code.42.tech/home/"
+		"https://app.42.tech/"
+		"https://clustermap.42.tech/"
+		"https://dash.42paris.fr/"
+		"https://ft42.notion.site/rtfm-stud?v=3409c27081be806f8e2d000c0b234b6b"
+		"https://steakoverflow.42paris.fr/"
+		"https://dash.42paris.fr/lockers"
+	)
+
+	local RED='' GRN='' YEL='' BLU='' CYN='' D='' B='' R='' REV=''
+	RED=$'\033[31m' ; GRN=$'\033[32m' ; YEL=$'\033[33m' ; BLU=$'\033[34m' ; CYN=$'\033[36m'
+	D=$'\033[2m' ; B=$'\033[1m' ; R=$'\033[0m' ; REV=$'\033[7m'
+
+	local n=${#labels[@]}
+	(( n == 0 )) && return 0
+	local cur=0 top=0
+	local checked=()
+	for ((i=0;i<n;i++)); do checked[i]=0; done
+
+	local old stty_old k rest action cols rows vis end rule fill txt
+
+	_hub_cleanup() {
+		tput cnorm
+		tput rmcup
+		stty "$stty_old" 2>/dev/null || stty sane 2>/dev/null
+	}
+
+	stty_old=$(stty -g 2>/dev/null || echo '')
+	stty -echo -isig || true
+	tput smcup
+	tput civis
+
+	trap '_hub_cleanup' EXIT INT TERM
+
+	while true; do
+		cols=$(tput cols)
+		rows=$(tput lines)
+		vis=$(( rows - 9 ))
+		(( vis < 3 )) && vis=3
+		(( cur < top )) && top=$cur
+		(( cur >= top + vis )) && top=$(( cur - vis + 1 ))
+		end=$(( top + vis ))
+		(( end > n )) && end=$n
+
+		printf -v rule '%*s' $(( cols - 2 > 0 ? cols - 2 : 0 )) '' ; rule=${rule// /─}
+		printf '\e[H\e[J'
+		# compute selected count
+		local sel_count=0
+		for ((si=0; si<n; si++)); do (( sel_count += checked[si] )); done
+		printf ' %s%shub%s  %s⎇%s   %slinks%s   %s%d/%d selected%s\n' "$B" "$CYN" "$R" "$D" "$R" "$B" "$R" "$D" "$sel_count" "$n" "$R"
+		printf ' %s%s%s\n' "$D" "$rule" "$R"
+
+		for ((i=top;i<end;i++)); do
+			local bg=''
+			local ptr=' '
+			if [[ $i -eq $cur ]]; then
+				# Highlighted row: plain chars inside reverse so reverse covers whole line
+				local ptr_plain='▌'
+				local box_plain
+				if (( checked[i] )); then box_plain='●'; else box_plain='○'; fi
+				local label_display="${labels[i]}"
+				local maxw=$(( cols - 12 ))
+				if (( ${#label_display} > maxw )); then
+					label_display="${label_display:0:$((maxw-1))}…"
+				fi
+				local total_vis=$(( 1 + 1 + 1 + 1 + 2 + ${#label_display} )) # space + ptr + space + box + two spaces + label
+				local pad=$(( cols - total_vis ))
+				(( pad < 0 )) && pad=0
+				printf '%s' "$REV"
+				printf ' %s %s  %s' "$ptr_plain" "$box_plain" "$label_display"
+				printf '%*s' "$pad" ''
+				printf '%s\n' "$R"
+			else
+				# non-highlighted: compute same visible length and pad so alignment matches highlighted row
+				local ptr_colored="${CYN}▌${R}"
+				if (( checked[i] )); then box_display="${GRN}●${R}"; else box_display="${D}○${R}"; fi
+				label_display="${labels[i]}"
+				local maxw=$(( cols - 12 ))
+				if (( ${#label_display} > maxw )); then
+					label_display="${label_display:0:$((maxw-1))}…"
+				fi
+				local total_vis=$(( 1 + 1 + 1 + 1 + 2 + ${#label_display} ))
+				local pad=$(( cols - total_vis ))
+				(( pad < 0 )) && pad=0
+				# print: leading space, colored ptr, space, colored box, two spaces, label, padding, reset
+				printf '%s' ""
+				printf ' '
+				printf '%s' "$ptr_colored"
+				printf ' '
+				printf '%s' "$box_display"
+				printf '  %s' "$D"
+				printf '%s' "$label_display"
+				printf '%*s' "$pad" ''
+				printf '%s\n' "$R"
+			fi
+		done
+		for ((i = end - top; i < vis; i++)); do echo; done
+
+		txt=""
+		(( top > 0 )) && txt+="↑ $top more  "
+		(( end < n )) && txt+="↓ $(( n - end )) more"
+		if [[ -n $txt ]]; then
+			v=$(( cols - 6 - ${#txt} )); (( v < 0 )) && v=0
+			printf -v fill '%*s' "$v" '' ; fill=${fill// /─}
+			printf ' %s── %s %s%s\n' "$D" "$txt" "$fill" "$R"
+		else
+			printf ' %s%s%s\n' "$D" "$rule" "$R"
+		fi
+
+		printf ' %s↑↓%s%s move%s  %sspace%s toggle%s  %senter%s open%s  %sq%s quit%s' "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R"
+
+		IFS= read -rsn1 k || break
+		if [[ $k == $'\033' ]]; then
+			IFS= read -rsn1 -t 0.05 rest || true
+			if [[ $rest == '[' ]]; then
+				IFS= read -rsn1 -t 0.05 rest || true
+				case $rest in
+					'A') k=UP ;; 'B') k=DOWN ;; 'C') k=RIGHT ;; 'D') k=LEFT ;;
+					*) k=IGN ;;
+				esac
+			else
+				k=ESC
+			fi
+		fi
+
+		case $k in
+			UP|k) (( cur > 0 )) && (( cur-- )) ;;
+			DOWN|j) (( cur < n - 1 )) && (( cur++ )) ;;
+			' ') checked[$cur]=$((1 - checked[$cur])) ;;
+			'')
+				# Enter: open all checked links (or current if none)
+				_hub_cleanup
+				trap - EXIT INT TERM
+				_open_url() {
+					local u="$1"
+					if command -v xdg-open >/dev/null 2>&1; then
+						xdg-open "$u" >/dev/null 2>&1 &
+					elif command -v open >/dev/null 2>&1; then
+						open "$u" >/dev/null 2>&1 &
+					else
+						python3 - <<PY >/dev/null 2>&1 &
+import webbrowser, sys
+webbrowser.open(sys.argv[1])
+PY
+					fi
+				}
+				local any=0
+				for ((oi=0; oi<n; oi++)); do
+					if (( checked[oi] )); then
+						_open_url "${urls[oi]}"
+						any=1
+					fi
+				done
+				if [[ $any -eq 0 ]]; then
+					_open_url "${urls[$cur]}"
+				fi
+				disown 2>/dev/null || true
+				return 0
+				;;
+			q|Q|ESC) _hub_cleanup; trap - EXIT INT TERM; return 0 ;;
+			*) ;;
+		esac
+	done
+}
+
+alias hub='hub_ui'
+
 nav() {
 	# ── Charte graphique : cyan/blanc-gras (style welcome42) ─────
 	local C_RESET=$'\033[0m'
