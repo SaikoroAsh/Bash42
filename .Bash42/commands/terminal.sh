@@ -55,20 +55,20 @@ fm() {
 
 nav() {
 	# ── Charte graphique : cyan/blanc-gras (style welcome42) ─────
-	local C_RESET="\033[0m"
-	local C_DIR="\033[1;37m"
-	local C_FILE="\033[0;36m"
-	local C_SEL="\033[1;30;46m"
-	local C_PATH="\033[1;37m"
-	local C_HINT="\033[2;36m"
-	local C_EMPTY="\033[2;31m"
-	local C_SCROLL="\033[0;36m"
-	local C_SEP="\033[0;36m"
-	local C_PRE_DIR="\033[2;37m"
-	local C_PRE_FILE="\033[2;36m"
-	local C_PRE_TITLE="\033[1;36m"
-	local C_PRE_EMPTY="\033[2;31m"
-	local C_PRE_SEP="\033[2;36m"
+	local C_RESET=$'\033[0m'
+	local C_DIR=$'\033[1;37m'
+	local C_FILE=$'\033[0;36m'
+	local C_SEL=$'\033[1;30;46m'
+	local C_PATH=$'\033[1;37m'
+	local C_HINT=$'\033[2;36m'
+	local C_EMPTY=$'\033[2;31m'
+	local C_SCROLL=$'\033[0;36m'
+	local C_SEP=$'\033[0;36m'
+	local C_PRE_DIR=$'\033[2;37m'
+	local C_PRE_FILE=$'\033[2;36m'
+	local C_PRE_TITLE=$'\033[1;36m'
+	local C_PRE_EMPTY=$'\033[2;31m'
+	local C_PRE_SEP=$'\033[2;36m'
 
 	local current_dir
 	current_dir="$(pwd)"
@@ -235,6 +235,7 @@ nav() {
 		shift 5
 		local -a entries=("$@")
 
+		printf '\033[H\033[2J'
 		tput cup 0 0
 		local EL
 		EL="$(tput el)"
@@ -242,63 +243,36 @@ nav() {
 		local term_cols term_lines
 		term_cols="$(tput cols)"
 		term_lines="$(tput lines)"
-
 		local left_w=$(( term_cols / 2 - 3 ))
-		[[ "$left_w" -lt 10 ]] && left_w=10
+		[[ "$left_w" -lt 18 ]] && left_w=18
 		local right_w=$(( term_cols - left_w - 4 ))
-		[[ "$right_w" -lt 5 ]] && right_w=5
+		[[ "$right_w" -lt 16 ]] && right_w=16
+		local rule fill txt v i name base label preview_dir
+		local end=$(( viewport_start + viewport_size ))
+		[[ "$end" -gt "$count" ]] && end="$count"
 
-		local border_w=$(( term_cols - 4 ))
-		local content_w=$(( term_cols - 8 ))
-		[[ "$content_w" -lt 1 ]] && content_w=1
-		local border_line
-		border_line=$(printf '%*s' "$border_w" '' | tr ' ' '-')
-		printf "${C_SEP}  +%s+${C_RESET}${EL}\n" "$border_line"
-
-		local dir_display="$dir"
-		if [[ ${#dir_display} -gt $content_w ]]; then
-			dir_display="~${dir_display:$(( ${#dir_display} - content_w + 1 ))}"
-		fi
-		local dir_pad=$(( content_w - ${#dir_display} ))
-		local dir_spaces
-		dir_spaces=$(printf '%*s' "$dir_pad" '')
-		printf "${C_SEP}  |${C_RESET}  ${C_PATH}%s${dir_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" 			"$dir_display"
-
-		local hint="[↵] Enter  [⇧↵] Parent  [R] Del  [?] Help  [q] Quit"
-		if [[ -n "$status_msg" ]]; then
-			hint="$status_msg"
-		fi
-		if [[ ${#hint} -gt $content_w ]]; then
-			hint="${hint:0:$(( content_w - 1 ))}~"
-		fi
-		local hint_pad=$(( content_w - ${#hint} ))
-		local hint_spaces
-		hint_spaces=$(printf '%*s' "$hint_pad" '')
-		printf "${C_SEP}  |${C_RESET}  ${C_HINT}%s${hint_spaces}${C_RESET}  ${C_SEP}|${C_RESET}${EL}\n" 			"$hint"
-		printf "${C_SEP}  +%s+${C_RESET}${EL}\n" "$border_line"
-		printf "${EL}\n"
+		printf -v rule '%*s' $(( term_cols - 2 )) ''; rule=${rule// /─}
+		printf ' %s%snav%s  %s⎇%s %s%s%s   %s   %s%d/%d entries%s\n' \
+			"$C_DIR" "$C_PATH" "$C_RESET" "$C_HINT" "$C_RESET" "$C_PATH" "$dir" "$C_RESET" "$C_HINT" "$C_RESET" "$(( sel + 1 ))" "$count" "$C_RESET"
+		printf ' %s%s%s\n' "$C_SEP" "$rule" "$C_RESET"
 
 		if [[ "$count" -eq 0 ]]; then
-			printf "  ${C_EMPTY}(répertoire vide)${C_RESET}${EL}\n"
+			printf '  %s(répertoire vide)%s\n' "$C_EMPTY" "$C_RESET"
 			tput ed
 			return
 		fi
 
 		local preview_active=0
-		local preview_dir=""
 		if [[ "$help_visible" -eq 1 ]]; then
 			preview_active=1
 			preview_dir="$current_dir"
-		elif [[ "$count" -gt 0 && -d "${entries[$sel]}" ]]; then
+		elif [[ "$count" -gt 0 ]]; then
 			preview_active=1
 			preview_dir="${entries[$sel]}"
 		fi
 
 		local -a left_rendered=()
-		local i name base label
-		local end=$(( viewport_start + viewport_size ))
-		[[ "$end" -gt "$count" ]] && end="$count"
-
+		local -a right_lines=()
 		for (( i=viewport_start; i<end; i++ )); do
 			name="${entries[$i]}"
 			base="${name##*/}"
@@ -309,32 +283,28 @@ nav() {
 			if [[ -n "${marked[$i]+x}" ]]; then
 				label="* ${label}"
 			fi
-			if [[ ${#label} -gt $left_w ]]; then
-				label="${label:0:$(( left_w - 1 ))}…"
+			if (( ${#label} > left_w - 5 )); then
+				label="${label:0:$(( left_w - 6 ))}…"
 			fi
 			local pad=$(( left_w - ${#label} ))
-			local spaces=""
-			local s
-			for (( s=0; s<pad; s++ )); do spaces+=" "; done
+			local spaces
+			printf -v spaces '%*s' "$pad" ''
 			if [[ "$i" -eq "$sel" ]]; then
-				left_rendered+=("${C_SEL}${label}${C_RESET}${spaces}")
+				left_rendered+=("${C_SEL}${label}${spaces}${C_RESET}")
 			elif [[ -d "$name" ]]; then
-				left_rendered+=("${C_DIR}${label}${C_RESET}${spaces}")
+				left_rendered+=("${C_DIR}${label}${spaces}${C_RESET}")
 			else
-				left_rendered+=("${C_FILE}${label}${C_RESET}${spaces}")
+				left_rendered+=("${C_FILE}${label}${spaces}${C_RESET}")
 			fi
 		done
 
-		local -a right_lines=()
 		if [[ "$help_visible" -eq 1 ]]; then
 			right_lines+=("${C_PRE_TITLE} Nav keys${C_RESET}")
-			right_lines+=("${C_PRE_SEP}--------------------------------${C_RESET}")
-			right_lines+=(" ${C_PRE_DIR}[Enter]${C_RESET} open/enter")
-			right_lines+=(" ${C_PRE_DIR}[⇧↵]${C_RESET} cd current dir")
-			right_lines+=(" ${C_PRE_DIR}[R]${C_RESET} delete selected")
-			right_lines+=(" ${C_PRE_DIR}[Space/S]${C_RESET} select item")
-			right_lines+=(" ${C_PRE_DIR}[h]${C_RESET} show hidden")
-			right_lines+=(" ${C_PRE_DIR}[?]${C_RESET} toggle help")
+			right_lines+=("${C_PRE_SEP}────────────────────${C_RESET}")
+			right_lines+=(" ${C_PRE_DIR}[↑↓]${C_RESET} move")
+			right_lines+=(" ${C_PRE_DIR}[space]${C_RESET} toggle")
+			right_lines+=(" ${C_PRE_DIR}[h]${C_RESET} hidden")
+			right_lines+=(" ${C_PRE_DIR}[?]${C_RESET} help")
 			right_lines+=(" ${C_PRE_DIR}[q]${C_RESET} quit")
 		elif [[ "$preview_active" -eq 1 ]]; then
 			local raw_preview
@@ -348,27 +318,49 @@ nav() {
 		local n_rows=$(( n_left > n_right ? n_left : n_right ))
 		[[ "$n_rows" -gt "$viewport_size" ]] && n_rows="$viewport_size"
 
-		local r
-		for (( r=0; r<n_rows; r++ )); do
-			if [[ "$r" -lt "$n_left" ]]; then
-				printf "  %b " "${left_rendered[$r]}"
+		for (( i=0; i<n_rows; i++ )); do
+			if [[ "$i" -lt "$n_left" ]]; then
+				printf ' %b ' "${left_rendered[$i]}"
 			else
-				printf "%$(( left_w + 3 ))s" ""
+				printf '%*s' "$(( left_w + 3 ))" ''
 			fi
-			if [[ "$preview_active" -eq 1 || "$help_visible" -eq 1 ]]; then
-				printf "${C_PRE_SEP}|${C_RESET}"
-				if [[ "$r" -lt "$n_right" ]]; then
-					printf "%b" "${right_lines[$r]}"
-				fi
+			printf '%s|%s' "$C_PRE_SEP" "$C_RESET"
+			if [[ "$i" -lt "$n_right" ]]; then
+				printf '%b' "${right_lines[$i]}"
 			fi
-			printf "${EL}\n"
+			printf '\n'
 		done
 
-		if [[ "$count" -gt "$viewport_size" ]]; then
-			printf "  ${C_SCROLL}[ %d / %d ]${C_RESET}${EL}\n" "$(( sel + 1 ))" "$count"
+		for (( i = n_rows; i < viewport_size; i++ )); do
+			echo
+		done
+
+		txt=""
+		(( viewport_start > 0 )) && txt+="↑ $viewport_start more  "
+		(( end < count )) && txt+="↓ $(( count - end )) more"
+		if [[ -n $txt ]]; then
+			v=$(( term_cols - 6 - ${#txt} )); (( v < 0 )) && v=0
+			printf -v fill '%*s' "$v" ''; fill=${fill// /─}
+			printf ' %s── %s %s%s\n' "$C_SEP" "$txt" "$fill" "$C_RESET"
 		else
-			printf "${EL}\n"
+			printf ' %s%s%s\n' "$C_SEP" "$rule" "$C_RESET"
 		fi
+
+		if [[ "$help_visible" -eq 1 ]]; then
+			printf ' %s%sNav keys%s\n' "$C_PRE_TITLE" "$C_HINT" "$C_RESET"
+			printf '   %s[↑↓]%s move      %s[space]%s toggle      %s[?]%s help\n' "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET"
+			printf '   %s[h]%s hidden    %s[r]%s delete     %s[q]%s quit\n' "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET"
+		else
+			printf ' %s✎ Message%s\n' "$C_HINT" "$C_RESET"
+			if [[ -n "$status_msg" ]]; then
+				printf '   %s%s%s\n' "$C_PRE_DIR" "$status_msg" "$C_RESET"
+			else
+				printf '   %s(press ? for help)%s\n' "$C_PRE_EMPTY" "$C_RESET"
+			fi
+		fi
+
+		printf ' %s↑↓%s%s move%s  %sspace%s%s toggle%s  %sh%s%s hidden%s  %s?%s%s help%s  %sq%s%s quit%s\n' \
+			"$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET" "$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET" "$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET" "$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET"
 		tput ed
 	}
 
