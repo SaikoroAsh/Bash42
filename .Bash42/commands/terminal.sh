@@ -235,8 +235,8 @@ nav() {
 		shift 5
 		local -a entries=("$@")
 
-		printf '\033[H\033[2J'
 		tput cup 0 0
+		tput ed
 		local EL
 		EL="$(tput el)"
 
@@ -320,13 +320,21 @@ nav() {
 
 		for (( i=0; i<n_rows; i++ )); do
 			if [[ "$i" -lt "$n_left" ]]; then
-				printf ' %b ' "${left_rendered[$i]}"
+				printf '%b' "${left_rendered[$i]}"
 			else
-				printf '%*s' "$(( left_w + 3 ))" ''
+				printf '%*s' "$left_w" ''
 			fi
 			printf '%s|%s' "$C_PRE_SEP" "$C_RESET"
 			if [[ "$i" -lt "$n_right" ]]; then
-				printf '%b' "${right_lines[$i]}"
+				local preview_raw="${right_lines[$i]}"
+				local preview_plain
+				preview_plain=$(printf '%s' "$preview_raw" | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')
+				local preview_pad=$(( right_w - ${#preview_plain} ))
+				(( preview_pad < 0 )) && preview_pad=0
+				printf '%b' "$preview_raw"
+				printf '%*s' "$preview_pad" ''
+			else
+				printf '%*s' "$right_w" ''
 			fi
 			printf '\n'
 		done
@@ -346,21 +354,8 @@ nav() {
 			printf ' %s%s%s\n' "$C_SEP" "$rule" "$C_RESET"
 		fi
 
-		if [[ "$help_visible" -eq 1 ]]; then
-			printf ' %s%sNav keys%s\n' "$C_PRE_TITLE" "$C_HINT" "$C_RESET"
-			printf '   %s[↑↓]%s move      %s[space]%s toggle      %s[?]%s help\n' "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET"
-			printf '   %s[h]%s hidden    %s[r]%s delete     %s[q]%s quit\n' "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET" "$C_PRE_DIR" "$C_RESET"
-		else
-			printf ' %s✎ Message%s\n' "$C_HINT" "$C_RESET"
-			if [[ -n "$status_msg" ]]; then
-				printf '   %s%s%s\n' "$C_PRE_DIR" "$status_msg" "$C_RESET"
-			else
-				printf '   %s(press ? for help)%s\n' "$C_PRE_EMPTY" "$C_RESET"
-			fi
-		fi
-
-		printf ' %s↑↓%s%s move%s  %sspace%s%s toggle%s  %sh%s%s hidden%s  %s?%s%s help%s  %sq%s%s quit%s\n' \
-			"$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET" "$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET" "$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET" "$C_DIR" "$C_RESET" "$C_HINT" "$C_RESET"
+		printf ' %sPRESS %s[%s?%s]%s for help%s\n' \
+			"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET"
 		tput ed
 	}
 
