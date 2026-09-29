@@ -1,5 +1,14 @@
 [
     {
+        "version": "2.4.0",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.4.0/Bash42.zip",
+        "sha256": "0c51b64ccf5d108ed16d063007a15ff221b406b324d00c85ed9d4cbd5d3db4a5",
+        "changelog": [
+            "Updated: nav, gbr, cpal",
+            "  Added: gsc, hub"
+        ]
+    },
+    {
         "version": "2.3.1",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.3.1/Bash42.zip",
         "sha256": "a4b4762c13a25a5e5e351726108d2fa99d364ed741c82ad9236d89e2637508d6",
