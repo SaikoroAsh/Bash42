@@ -885,6 +885,9 @@ cpal() {
 	local style_flags=0 style_name="Default"
 	local -a palette_order=()
 	local -a green_slices=(0 3 1 4 2 5)
+	local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m' REV=$'\e[7m'
+	local CYN=$'\e[36m' GRN=$'\e[32m' YEL=$'\e[33m' RED=$'\e[31m' BLU=$'\e[34m'
+	local BG=$'\e[48;5;237m'
 
 	_cpal_build_order() {
 		local palette_color cube_row cube_column green_slice
@@ -953,14 +956,16 @@ cpal() {
 	}
 
 	_cpal_cleanup() {
-		printf '\033[?1000l\033[?1006l\033[?25h\033[0m\n'
-		stty echo icanon 2>/dev/null
+		tput cnorm; tput rmcup
+		printf '\033[?1000l\033[?1006l\033[0m\n'
+		stty "$cpal_old" 2>/dev/null || stty echo icanon 2>/dev/null
 	}
 
 	_cpal_draw() {
 		local palette_color cube_row cube_column block_row block_column green_slice
 		local -a green_slices=(0 3 1 4 2 5)
 		local draw_swatch
+		local cols rule status_label
 
 		draw_swatch() {
 			local swatch_color="$1"
@@ -971,9 +976,20 @@ cpal() {
 			fi
 		}
 
-		# Clear screen and scrollback, then move cursor to home
-		printf '\033[3J\033[2J\033[H'
-		printf 'ANSI 256 colors (click a color to copy its code, or press q to quit)\n\n'
+		cols=$(tput cols)
+		printf -v rule '%*s' $(( cols - 2 )) ''
+		rule=${rule// /─}
+
+		# Clear the screen and reset the cursor without forcing a scrollback jump
+		printf '\e[H\e[J'
+		if [[ "$selected_color" -ge 0 ]]; then
+			status_label="${selected_color} • ${style_name}"
+		else
+			status_label="pick a color"
+		fi
+		printf ' %s%scpal%s  %s⎇%s %s%s%s   %s   %s%s%s\e[K\n' \
+			"$B" "$CYN" "$R" "$D" "$R" "$B" "$status_label" "$R" "$D" "$selected_color" "$R" || true
+		printf ' %s%s%s\e[K\n' "$D" "$rule" "$R"
 		printf 'Standard: '
 		for (( palette_color = 0; palette_color < 8; palette_color++ )); do draw_swatch "$palette_color"; done
 		printf '\nIntense : '
@@ -1014,22 +1030,30 @@ cpal() {
 			"$([[ $(( style_flags & 256 )) -ne 0 ]] && printf '*DoubleUnderline' || printf 'DoubleUnderline')" \
 			"$([[ $(( style_flags & 512 )) -ne 0 ]] && printf '*Overline' || printf 'Overline')"
 
+		printf ' %s%s%s\e[K\n' "$D" "$rule" "$R"
 		if [[ "$selected_color" -ge 0 ]]; then
-			printf '\nSelected color: %d\n' "$selected_color"
-			printf 'Style: %s\n' "$style_name"
-			printf 'Copied: %s\n' "$ansi_code"
+			printf ' %s%s%s\e[K\n' "$B" "$style_name" "$R"
+			printf ' %s%s%s\e[K\n' "$D" "$ansi_code" "$R"
 		else
-			printf '\nClick a swatch to copy its selected style.\n'
+			printf ' %s%s%s\e[K\n' "$D" "click a swatch to copy its selected style" "$R"
 		fi
+		printf ' %s%s%s\e[K\n' "$D" "$rule" "$R"
+		printf ' %s%s%s  %s%s%s  %s%s%s  %s%s%s  %s%s%s  %s%s%s\e[K\n' \
+			"$B" "q" "$R" "$D" "quit" "$R" \
+			"$B" "1-0/a" "$R" "$D" "styles" "$R" \
+			"$B" "click" "$R" "$D" "copy" "$R" \
+			"$B" "r" "$R" "$D" "reset" "$R" || true
 	}
 
 	_cpal_build_order
+	cpal_old=$(stty -g 2>/dev/null || echo '')
 	trap '_cpal_cleanup' EXIT INT TERM
 	stty -echo -icanon min 1 time 0 2>/dev/null || {
 		trap - EXIT INT TERM
 		return 1
 	}
-	printf '\033[?1000h\033[?1006h\033[?25l'
+	tput smcup; tput civis
+	printf '\033[?1000h\033[?1006h'
 
 	while true; do
 		_cpal_draw
@@ -1100,7 +1124,6 @@ cpal() {
 							_cpal_make_code
 							_cpal_copy "$ansi_code"
 							copy_status="$?"
-							_cpal_draw
 							if [[ "$copy_status" -ne 0 ]]; then
 								printf 'Clipboard unavailable; code: %s\n' "$ansi_code"
 							fi
@@ -1119,6 +1142,13 @@ cpal() {
 			_cpal_cleanup
 			trap - EXIT INT TERM
 			return 0
+		elif [[ "$key" == 'r' || "$key" == 'R' ]]; then
+			style_flags=0
+			_cpal_update_style_name
+			if [[ "$selected_color" -ge 0 ]]; then
+				_cpal_make_code
+				_cpal_copy "$ansi_code"
+			fi
 		elif [[ "$key" == '1' || "$key" == '2' || "$key" == '3' || "$key" == '4' || "$key" == '5' || "$key" == '6' || "$key" == '7' || "$key" == '8' || "$key" == '9' || "$key" == '0' || "$key" == 'a' || "$key" == 'A' ]]; then
 			case "$key" in
 				1) style_flags=0 ;;
