@@ -802,7 +802,8 @@ cpal() {
 			fi
 		}
 
-		printf '\033[2J\033[H'
+		# Clear screen and scrollback, then move cursor to home
+		printf '\033[3J\033[2J\033[H'
 		printf 'ANSI 256 colors (click a color to copy its code, or press q to quit)\n\n'
 		printf 'Standard: '
 		for (( palette_color = 0; palette_color < 8; palette_color++ )); do draw_swatch "$palette_color"; done

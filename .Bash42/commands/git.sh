@@ -86,122 +86,69 @@ gbr() {
     (( n == 0 )) && { echo "gbr: no branches yet (no commits)" >&2; return 1; }
 
     local current=$(git branch --show-current)
-    local cur=0 top=0
-    for i in "${!branches[@]}"; do [[ "${branches[$i]}" == "$current" ]] && cur=$i; done
+    local merge_src=""
+    local merge_note=""
+    local note=""
 
-    # Build parent -> children map to display a tree-like view
-    declare -A parent_of children_of index_of
-    for i in "${!branches[@]}"; do
-        index_of["${branches[$i]}"]=$i
-    done
-    # For each branch, try to find an obvious parent by checking which other branch contains its tip
-    for b in "${branches[@]}"; do
-        parent_of["$b"]=""
-        # find other branches whose tip is an ancestor of b (excluding b itself), pick the closest (most recent)
-        local best="" best_common=""
-        for other in "${branches[@]}"; do
-            [[ "$other" == "$b" ]] && continue
-            # check if other is ancestor of b
-            if git merge-base --is-ancestor "refs/heads/$other" "refs/heads/$b" 2>/dev/null; then
-                # compute merge-base time (approx via commit date) to pick the closest ancestor
-                common=$(git merge-base "refs/heads/$other" "refs/heads/$b" 2>/dev/null)
-                if [[ -z "$best_common" || $(git show -s --format=%ct "$common") -gt $(git show -s --format=%ct "$best_common") ]]; then
-                    best="$other"; best_common="$common"
+    _gbr_rebuild_display() {
+        declare -A parent_of child_map seen
+        for br in "${branches[@]}"; do
+            parent_of["$br"]=""
+            child_map["$br"]=""
+            seen["$br"]=0
+        done
+
+        for br in "${branches[@]}"; do
+            local best=""
+            for other in "${branches[@]}"; do
+                [[ "$other" == "$br" ]] && continue
+                if [[ "$br" == "$other"/* ]]; then
+                    if [[ -z "$best" || ${#other} -gt ${#best} ]]; then
+                        best="$other"
+                    fi
                 fi
+            done
+            if [[ -n "$best" ]]; then
+                parent_of["$br"]="$best"
+                child_map["$best"]+="$br"$'\n'
             fi
         done
-        if [[ -n "$best" ]]; then
-            parent_of["$b"]="$best"
-            children_of["$best"]+=$b$'\n'
-        fi
-    done
 
-    # Keep the active branch as the display root, but preserve a nested branch only when
-    # its parent is not also an ancestor of the current branch.
-    declare -A display_children
-    for b in "${branches[@]}"; do
-        display_children["$b"]=""
-    done
-    for b in "${branches[@]}"; do
-        [[ "$b" == "$current" ]] && continue
-        local parent="$current"
-        local p="${parent_of[$b]}"
-        if [[ -n "$p" && "$p" != "$current" ]]; then
-            if git merge-base --is-ancestor "refs/heads/$p" "refs/heads/$current" 2>/dev/null; then
-                parent="$current"
-            else
-                parent="$p"
+        display_label=()
+        display_branch=()
+        _gbr_emit() {
+            local node="$1" depth="$2"
+            [[ "${seen[$node]}" == "1" ]] && return
+            seen["$node"]=1
+            local idx=${#display_label[@]}
+            display_label[idx]="$(printf '%*s' $((depth * 2)) '')${node##*/}"
+            display_branch[idx]="$node"
+            local -a kids=()
+            if [[ -n "${child_map[$node]}" ]]; then
+                IFS=$'\n' read -r -d '' -a kids < <(printf '%s\0' "${child_map[$node]}")
             fi
-        fi
-        display_children["$parent"]+="$b"$'\n'
-    done
-    for b in "${branches[@]}"; do
-        children_of["$b"]="${display_children[$b]}"
-    done
+            for child in "${kids[@]}"; do
+                [[ -z "$child" ]] && continue
+                _gbr_emit "$child" $((depth + 1))
+            done
+        }
 
-    # Produce a flattened, display-ordered list that shows tree indentation
-    # The active branch is the display root.
-    local -a roots
-    roots=("$current")
-    # helper: sort a list of branch names by tip commit time (newest first)
-    _sort_by_time() {
-        local -a in=("${!1}") out=()
-        local -a tmp=()
-        local br t
-        for br in "${in[@]}"; do
-            t=$(git show -s --format=%ct "refs/heads/$br" 2>/dev/null || echo 0)
-            tmp+=("$t:$br")
+        for br in "${branches[@]}"; do
+            if [[ -z "${parent_of[$br]}" ]]; then
+                _gbr_emit "$br" 0
+            fi
         done
-        IFS=$'\n' read -r -d '' -a tmp < <(printf '%s\n' "${tmp[@]}" | sort -r -n && printf '\0')
-        for br in "${tmp[@]}"; do out+=("${br#*:}"); done
-        eval "$2=(\"${out[@]}\")"
+
+        for br in "${branches[@]}"; do
+            [[ "${seen[$br]}" == "1" ]] && continue
+            _gbr_emit "$br" 0
+        done
     }
 
-    # sort roots newest-first
-    _sort_by_time roots roots_sorted
-
-    display_branches=()
-    # depth-first traversal with children sorted newest-first
-    _dfs_sorted() {
-        local name="$1" indent="$2"
-        display_branches+=("$name"$'\t'"$indent")
-        # read children into array
-        local -a kids=()
-        IFS=$'\n' read -r -d '' -a kids < <(printf '%s' "${children_of[$name]}" && printf '\0')
-            if (( ${#kids[@]} )); then
-                # sort kids by tip time
-                _sort_by_time kids kids_sorted
-                local k
-                for k in "${kids_sorted[@]}"; do [[ -z "$k" ]] && continue; _dfs_sorted "$k" "$((indent+1))"; done
-            fi
-    }
-
-    local r
-    for r in "${roots_sorted[@]}"; do _dfs_sorted "$r" 0; done
-    # If any branches weren't included (due to cycles or parent detection failure), append them flat
-    for b in "${branches[@]}"; do
-        found=0
-        for d in "${display_branches[@]}"; do [[ "$d" == "$b"* ]] && { found=1; break; } done
-        [[ $found -eq 0 ]] && display_branches+=("$b"$'\t'"0")
-    done
-
-    # Split display_branches into names and indentation levels, rebuild selection mapping
-    local -a db_names db_indent
-    for entry in "${display_branches[@]}"; do
-        name=${entry%%$'\t'*}
-        indent=${entry#*$'\t'}
-        db_names+=("$name")
-        db_indent+=("$indent")
-    done
-    # Override branch list and count to reflect display order
-    branches=("")
-    for name in "${db_names[@]}"; do branches+=("$name"); done
-    # drop the initial empty placeholder
-    branches=("${branches[@]:1}")
-    local n=${#branches[@]}
-    # reposition cur to display index of current branch
-    cur=0
-    for i in "${!branches[@]}"; do [[ "${branches[$i]}" == "$current" ]] && cur=$i; done
+    _gbr_rebuild_display
+    local cur=0 top=0
+    local count_display=${#display_label[@]}
+    for i in "${!display_branch[@]}"; do [[ "${display_branch[$i]}" == "$current" ]] && cur=$i; done
 
     local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m' REV=$'\e[7m'
     local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' BLU=$'\e[34m' CYN=$'\e[36m'
@@ -221,48 +168,146 @@ gbr() {
         printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
         pill=$'\e[30;46m BRANCHES \e[0m'
         printf ' %s%sgbr%s  %s⎇%s %s%s%s   %s   %s%d/%d%s\n' \
-            "$B" "$CYN" "$R" "$D" "$R" "$B" "$current" "$R" "$pill" "$D" "$((cur+1))" "$n" "$R"
+            "$B" "$CYN" "$R" "$D" "$R" "$B" "$current" "$R" "$pill" "$D" "$((cur+1))" "$count_display" "$R"
         printf ' %s%s%s\n' "$D" "$rule" "$R"
 
-        end=$(( top + vis )); (( end > n )) && end=$n
+        end=$(( top + vis )); (( end > count_display )) && end=$count_display
         for (( i = top; i < end; i++ )); do
-            local bg ptr box base prefix indent
+            local bg ptr box lbl branchname
             bg=""; ptr=" "
-            if [ $i -eq $cur ]; then bg=$BG; ptr="${CYN}▌"; fi
-            box="${D}○"; [[ "${branches[$i]}" == "$current" ]] && box="${GRN}●"
-            base=${branches[$i]}
-            indent=${db_indent[$i]:-0}
-            prefix=""
-            if (( indent > 0 )); then
-                # simple tree: 2 spaces per indent, use └─ for last-level marker
-                local j
-                for (( j=1; j<indent; j++ )); do prefix+="  "; done
-                prefix+="└─ "
+            if [[ $i -eq $cur ]]; then bg=$BG; ptr="${CYN}▌"; fi
+            branchname="${display_branch[$i]}"
+            if [[ -n $branchname ]]; then
+                if [[ "$branchname" == "$merge_src" ]]; then
+                    box="${YEL}●"
+                elif [[ "$branchname" == "$current" ]]; then
+                    box="${GRN}●"
+                else
+                    box="${D}○"
+                fi
+            else
+                box="${D}○"
             fi
-            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${prefix}${base}${R}${bg}"
+            lbl="${display_label[$i]}"
+            line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${B}${lbl}${R}${bg}"
             printf '%s\e[K%s\n' "$line" "$R"
         done
         for (( i = end - top; i < vis; i++ )); do echo; done
 
-        printf ' %s↑↓%s move  %senter%s checkout  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R"
+        if [[ -n $merge_note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$merge_note" "$R"; else echo; fi
+        if [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
+        printf ' %s↑↓%s move  %senter%s checkout  %sM%s merge  %sR%s delete  %sq%s quit%s\n' "$B" "$R" "$B" "$R" "$B" "$R" "$B" "$R" "$B" "$R"
 
         IFS= read -rsn1 k
+        note=""
+        merge_note=""
         if [[ $k == $'\e' ]]; then
             read -rsn2 -t 0.05 k || true
             case $k in
                 "[A") (( cur > 0 )) && (( cur-- )) ;;
-                "[B") (( cur < n - 1 )) && (( cur++ )) ;;
+                "[B") (( cur < count_display - 1 )) && (( cur++ )) ;;
             esac
         elif [[ $k == "" ]]; then
             break
         elif [[ $k == q || $k == $'\x03' ]]; then
             cur=-1; break
+        elif [[ $k == m || $k == M ]]; then
+            local selected="${display_branch[$cur]}"
+            if [[ -z "$selected" ]]; then
+                merge_note="no branch selected"
+                continue
+            fi
+            if [[ -z "$merge_src" ]]; then
+                merge_src="$selected"
+                merge_note="merge source: $selected"
+                continue
+            fi
+            if [[ "$selected" == "$merge_src" ]]; then
+                merge_src=""
+                merge_note="merge cancelled"
+                continue
+            fi
+
+            local target="$selected"
+            local source="$merge_src"
+            tput cup $(( rows - 1 )) 0; tput el
+            printf ' \e[30;46m MERGE \e[0m Merge %s into %s? %s(y/n)%s ' "$source" "$target" "$B" "$R"
+            IFS= read -rsn1 k
+            if [[ $k == [yYoO] ]]; then
+                if git checkout "$target" >/dev/null 2>&1; then
+                    if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+                        git pull --ff-only >/dev/null 2>&1 || {
+                            merge_src=""
+                            merge_note="pull failed for $target"
+                            continue
+                        }
+                    else
+                        git fetch --all --prune >/dev/null 2>&1 || true
+                        if git ls-remote --exit-code --heads origin "$target" >/dev/null 2>&1; then
+                            git pull --ff-only origin "$target" >/dev/null 2>&1 || {
+                                merge_src=""
+                                merge_note="pull failed for $target"
+                                continue
+                            }
+                        fi
+                    fi
+                    if git merge --no-edit "$source" >/dev/null 2>&1; then
+                        current=$(git branch --show-current)
+                        mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)
+                        _gbr_rebuild_display
+                        count_display=${#display_label[@]}
+                        merge_src=""
+                        merge_note="merged $source into $target"
+                        continue
+                    else
+                        merge_src=""
+                        merge_note="merge failed: $source -> $target"
+                        continue
+                    fi
+                else
+                    merge_src=""
+                    merge_note="checkout failed: $target"
+                    continue
+                fi
+            fi
+            merge_src=""
+            continue
+        elif [[ $k == r || $k == R ]]; then
+            local target="${display_branch[$cur]}"
+            if [[ -z "$target" ]]; then
+                note="no branch selected"
+                continue
+            fi
+            if [[ "$target" == "$current" ]]; then
+                note="cannot delete current branch"
+                continue
+            fi
+            tput cup $(( rows - 1 )) 0; tput el
+            printf ' \e[30;41m DELETE \e[0m Delete branch %s? %s(y/n)%s ' "$target" "$B" "$R"
+            IFS= read -rsn1 k
+            if [[ $k == [yYoO] ]]; then
+                if git branch -D -- "$target" >/dev/null 2>&1; then
+                    mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)
+                    current=$(git branch --show-current)
+                    _gbr_rebuild_display
+                    count_display=${#display_label[@]}
+                    cur=0
+                    for i in "${!display_branch[@]}"; do [[ "${display_branch[$i]}" == "$current" ]] && cur=$i; done
+                    note="branch deleted"
+                    continue
+                else
+                    note="could not delete $target"
+                fi
+            fi
+            continue
         fi
     done
 
     tput cnorm; tput rmcup; stty "$old"
     (( cur < 0 )) && return 0
-    git checkout "${branches[$cur]}"
+    sel_branch="${display_branch[$cur]}"
+    if [[ -z $sel_branch ]]; then echo "No branch at selection"; return 1; fi
+    git checkout "$sel_branch"
 }
 
 gsc() {
