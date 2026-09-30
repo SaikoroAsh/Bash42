@@ -1,5 +1,19 @@
 [
     {
+        "version": "2.4.1",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.4.1/Bash42.zip",
+        "sha256": "5577fac4b6a79be3d7a03f29aee2a20ec9670def05d02ee6e53fa0588fcacf01",
+        "changelog": [
+            "+-----------------------------------+",
+            "| Updated help42:                   |",
+            "| -Now more interactive with more   |",
+            "|  complete description             |",
+            "| -The old version is still         |",
+            "|  available with \"-p / -plain      |",
+            "+-----------------------------------+"
+        ]
+    },
+    {
         "version": "2.4.0",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.4.0/Bash42.zip",
         "sha256": "0c51b64ccf5d108ed16d063007a15ff221b406b324d00c85ed9d4cbd5d3db4a5",
