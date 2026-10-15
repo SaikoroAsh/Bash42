@@ -56,6 +56,8 @@ _help42_plain()
     echo -e "  ║   ${CYANB} gcd  :${WHITE} Git clone and go to the directory created${CYAN}                      ║"
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN}                 ║"
     echo -e "  ║   ${CYANB} gsc  :${WHITE} Select files, enter a message, commit and push${CYAN} ${NEW}           ║"
+    echo -e "  ║   ${CYANB} grc  :${WHITE} Browse commits and revert back to the selected one${CYAN} ${NEW}       ║"
+    echo -e "  ║   ${CYANB} gcp  :${WHITE} Pick commits from another branch and cherry-pick them${CYAN} ${NEW}    ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN}                       ║"
     echo -e "  ║   ${CYANB} gb   :${WHITE} Run git branch${CYAN}                                                 ║"
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${UPDATED}                          ║"
@@ -124,6 +126,8 @@ _help42_load_entries()
         "gcd|Clone a repo and enter it|Clone a repository and immediately move into the created directory, reducing the setup steps between cloning and editing."
         "gd|Commit and push directly|Create a commit with the given message and immediately push it upstream. Good for quick save-and-sync work."
         "gsc|Interactive commit helper|Select files, write a commit message, and push from a full-screen Bash UI. This is the guided git workflow for people who prefer a menu over raw Git commands."
+        "grc|Revert back to a commit|Browse the commit history in a full-screen UI, with the full commit message shown on the right. Press enter on a commit and confirm to undo every commit made after it with git revert, in a single new commit. History is kept, nothing is force-pushed."
+        "gcp|Cherry-pick commits from another branch|Browse the commits of another branch that are not on yours yet, with the full message on the right. Switch the source branch with left/right, toggle commits with space, then press enter and confirm to cherry-pick them (oldest first) onto your current branch."
         "gre|Relink a repo to a new remote|Remove the old origin and add a new one, then set upstream on the main branch so the repo points to the correct remote."
         "gb|List branches|Display the branch list for the current repository so you can keep track of your local environment."
         "gbr|Browse and manage branches|Open a full-screen branch browser to move around local branches, inspect their state, merge them, or delete them safely."
@@ -154,7 +158,7 @@ _help42_load_entries()
         case $name in
             ccw|ff|v|vh|a|rv) category='C Editor & Compilation' ;;
             p|ffp|pcc|cve|on|off) category='Python' ;;
-            gg|ga|gaa|gu|gs|gpom|gp|gc|gcd |gd|gsc|gre|gb|gbr|gbc|gav|grpo|grv) category='Git' ;;
+            gg|ga|gaa|gu|gs|gpom|gp|gc|gcd |gd|gsc|grc|gcp|gre|gb|gbr|gbc|gav|grpo|grv) category='Git' ;;
             nav|cpal|iph|mask|fdata|fm|hub|vsc|cln) category='Terminal and Tools' ;;
             *) category='Bash42' ;;
         esac
