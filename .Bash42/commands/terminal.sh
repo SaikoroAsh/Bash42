@@ -259,43 +259,55 @@ nav() {
 	local -a marked_order=()
 	local -a entries=()
 
+	# Terminal size is cached and only re-queried on SIGWINCH, so the
+	# render loop never forks tput.
+	local nav_resized=1 nav_cols=80 nav_lines=24
+	local nav_prev_winch
+	nav_prev_winch="$(trap -p WINCH)"
+
 	_nav_cleanup() {
 		tput cnorm
 		tput rmcup
 		stty sane 2>/dev/null
 		stty echo 2>/dev/null
+		if [[ -n "$nav_prev_winch" ]]; then
+			eval "$nav_prev_winch"
+		else
+			trap - WINCH
+		fi
 	}
 	trap '_nav_cleanup' EXIT INT TERM
 	trap '' INT
+	trap 'nav_resized=1' WINCH
 
 	_nav_read_key() {
 		local __out_name="$1"
-		local timeout_seconds="${2:-0}"
+		local timeout_seconds="${2:-}"
 		local ch seq
-		if [[ "$timeout_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] && [[ "$timeout_seconds" != "0" ]]; then
-			if ! IFS= read -r -s -N 1 -t "$timeout_seconds" ch; then
-				printf -v "$__out_name" '%s' ""
-				return 1
-			fi
+		printf -v "$__out_name" '%s' ""
+		if [[ -n "$timeout_seconds" ]]; then
+			IFS= read -r -s -N 1 -t "$timeout_seconds" ch || return 1
 		else
-			IFS= read -r -s -N 1 ch
-			if [[ -z "$ch" ]]; then
-				printf -v "$__out_name" '%s' $'\n'
-				return
-			fi
+			IFS= read -r -s -N 1 ch || return 1
 		fi
 		if [[ "$ch" == $'\e' ]]; then
+			# Escape sequences arrive in one burst; a lone ESC has nothing after it.
 			seq="$ch"
-			while IFS= read -r -s -N 1 ch; do
+			if IFS= read -r -s -N 1 -t 0.05 ch; then
 				seq+="$ch"
-				case "$ch" in
-					[A-Za-z~]|$'\n'|$'\r')
-						break
-						;;
-				esac
-			done
+				if [[ "$ch" == '[' || "$ch" == 'O' ]]; then
+					while IFS= read -r -s -N 1 -t 0.05 ch; do
+						seq+="$ch"
+						case "$ch" in
+							[A-Za-z~]|$'\n'|$'\r')
+								break
+								;;
+						esac
+					done
+				fi
+			fi
 			printf -v "$__out_name" '%s' "$seq"
-			return
+			return 0
 		fi
 		printf -v "$__out_name" '%s' "$ch"
 	}
@@ -337,206 +349,130 @@ nav() {
 		return 1
 	}
 
-	_nav_list() {
-		local dir="$1"
-		local f
-		while IFS= read -r f; do
-			[[ "$show_hidden" -eq 0 && "${f##*/}" == .* ]] && continue
-			printf '%s\n' "$f"
-		done < <(
-			{
-				find "$dir" -maxdepth 1 -mindepth 1 -type d | sort
-				find "$dir" -maxdepth 1 -mindepth 1 ! -type d | sort
-			}
-		)
-	}
-
-	_nav_visible_len() {
-		local text="$1"
-		local i=0
-		local len=0
-		local ch
-		while (( i < ${#text} )); do
-			ch="${text:i:1}"
-			if [[ "$ch" == $'\033' ]]; then
-				((i++))
-				while (( i < ${#text} )); do
-					ch="${text:i:1}"
-					if [[ "$ch" =~ [A-Za-z] ]]; then
-						((i++))
-						break
-					fi
-					((i++))
-				done
-				continue
+	# Fill the array named $1 with the entries of $2: directories first, then
+	# everything else, each sorted. Uses globbing so no process is spawned.
+	_nav_scan() {
+		local -n _nav_out="$1"
+		local dir="${2%/}"
+		local -a all=() dirs=() files=()
+		local f had_nullglob=0 had_dotglob=0
+		shopt -q nullglob && had_nullglob=1
+		shopt -q dotglob && had_dotglob=1
+		shopt -s nullglob
+		if [[ "$show_hidden" -eq 1 ]]; then shopt -s dotglob; else shopt -u dotglob; fi
+		all=("$dir"/*)
+		[[ "$had_nullglob" -eq 1 ]] || shopt -u nullglob
+		if [[ "$had_dotglob" -eq 1 ]]; then shopt -s dotglob; else shopt -u dotglob; fi
+		for f in "${all[@]}"; do
+			case "${f##*/}" in .|..) continue ;; esac
+			if [[ -d "$f" && ! -L "$f" ]]; then
+				dirs+=("$f")
+			else
+				files+=("$f")
 			fi
-			((len++))
-			((i++))
 		done
-		printf '%s' "$len"
+		_nav_out=("${dirs[@]}" "${files[@]}")
 	}
 
+	# Append the preview of $1 to the caller's right_lines array.
 	_nav_preview_lines() {
 		local dir="$1"
 		local col_w="$2"
 		local max_lines="$3"
-		local -a plines=()
 		local -a items=()
-		local f
-		while IFS= read -r f; do
-			[[ "$show_hidden" -eq 0 && "${f##*/}" == .* ]] && continue
-			items+=("$f")
-		done < <(
-			{
-				find "$dir" -maxdepth 1 -mindepth 1 -type d | sort
-				find "$dir" -maxdepth 1 -mindepth 1 ! -type d | sort
-			}
-		)
+		_nav_scan items "$dir"
 
 		local item_count="${#items[@]}"
 		local title_raw=" ${dir##*/}/"
 		local max_title=$(( col_w - 2 ))
 		[[ ${#title_raw} -gt $max_title ]] && title_raw="${title_raw:0:$max_title}…"
-		plines+=("${C_PRE_TITLE}${title_raw}${C_RESET}")
+		right_lines+=("${C_PRE_TITLE}${title_raw}${C_RESET}")
 
 		local sep
-		sep=$(printf '%*s' "$col_w" '' | tr ' ' '-')
-		plines+=("${C_PRE_SEP}${sep}${C_RESET}")
+		printf -v sep '%*s' "$col_w" ''
+		right_lines+=("${C_PRE_SEP}${sep// /-}${C_RESET}")
 
 		if [[ "$item_count" -eq 0 ]]; then
-			plines+=("${C_PRE_EMPTY} (vide)${C_RESET}")
-		else
-			local shown=$(( max_lines - 3 ))
-			[[ "$shown" -lt 1 ]] && shown=1
-			local display=$(( item_count < shown ? item_count : shown ))
-			local j
-			for (( j=0; j<display; j++ )); do
-				local iname="${items[$j]}"
-				local ibase="${iname##*/}"
-				local ilabel="${ibase}"
-				local icolor
-				if [[ -d "$iname" ]]; then
-					ilabel=" ${ibase}/"
-					icolor="$C_PRE_DIR"
-				else
-					ilabel=" ${ibase}"
-					icolor="$C_PRE_FILE"
-				fi
-				local max_l=$(( col_w - 1 ))
-				[[ ${#ilabel} -gt $max_l ]] && ilabel="${ilabel:0:$max_l}…"
-				plines+=("${icolor}${ilabel}${C_RESET}")
-			done
-			if [[ "$item_count" -gt "$display" ]]; then
-				local remaining=$(( item_count - display ))
-				plines+=("${C_PRE_SEP} … +${remaining} élément(s)${C_RESET}")
-			fi
+			right_lines+=("${C_PRE_EMPTY} (vide)${C_RESET}")
+			return
 		fi
-
-		local pl
-		for pl in "${plines[@]}"; do
-			printf '%s\0' "$pl"
+		local shown=$(( max_lines - 3 ))
+		[[ "$shown" -lt 1 ]] && shown=1
+		local display=$(( item_count < shown ? item_count : shown ))
+		local max_l=$(( col_w - 1 ))
+		local j iname ilabel icolor
+		for (( j=0; j<display; j++ )); do
+			iname="${items[$j]}"
+			if [[ -d "$iname" ]]; then
+				ilabel=" ${iname##*/}/"
+				icolor="$C_PRE_DIR"
+			else
+				ilabel=" ${iname##*/}"
+				icolor="$C_PRE_FILE"
+			fi
+			[[ ${#ilabel} -gt $max_l ]] && ilabel="${ilabel:0:$max_l}…"
+			right_lines+=("${icolor}${ilabel}${C_RESET}")
 		done
+		if [[ "$item_count" -gt "$display" ]]; then
+			right_lines+=("${C_PRE_SEP} … +$(( item_count - display )) élément(s)${C_RESET}")
+		fi
 	}
 
+	# Render a full frame into one buffer and write it in a single printf.
+	# Every line starts with "erase line" instead of being padded to the
+	# terminal width, and the frame ends with "erase below", so no visible
+	# length has to be computed and stale lines never linger.
 	_nav_draw() {
-		local dir="$1"
-		local sel="$2"
-		local count="$3"
-		local viewport_start="$4"
-		local viewport_size="$5"
-		shift 5
-		local -a entries=("$@")
+		local dir="$current_dir"
+		local sel="$selected"
+		local term_cols="$nav_cols"
+		local EL=$'\033[K'
+		local NL=$'\n'
+		local out=$'\033[H'
 
-		# Avoid a full clear on every redraw; it causes the blank flash.
-		# Reusing the alternate screen buffer and moving the cursor to the
-		# top is enough to repaint the nav UI without visible flicker.
-		printf '\033[H'
-		tput cup 0 0
-		local EL
-		EL="$(tput el)"
-
-		local term_cols term_lines
-		term_cols="$(tput cols)"
-		term_lines="$(tput lines)"
 		local left_w=$(( term_cols / 2 - 3 ))
 		[[ "$left_w" -lt 18 ]] && left_w=18
 		local right_w=$(( term_cols - left_w - 4 ))
 		[[ "$right_w" -lt 16 ]] && right_w=16
-		local rule fill txt v i name base label preview_dir
+		local rule fill txt v i name label preview_dir spaces
 		local end=$(( viewport_start + viewport_size ))
 		[[ "$end" -gt "$count" ]] && end="$count"
 
 		printf -v rule '%*s' $(( term_cols - 2 )) ''; rule=${rule// /─}
+		local bottom_rule_line="${EL} ${C_SEP}${rule}${C_RESET}${NL}"
+		local help_line="${EL} ${C_DIR}PRESS ${C_HINT}[${C_DIR}?${C_HINT}]${C_RESET} for help${C_RESET}${NL}"
+
+		# Header: " nav  ⎇ " (8 columns), path, padding, "  N/M entries".
 		local display_sel=$(( count > 0 ? sel + 1 : 0 ))
-		local prefix_text
-		prefix_text=$(printf ' %s%snav%s  %s⎇%s ' "$C_DIR" "$C_PATH" "$C_RESET" "$C_HINT" "$C_RESET")
-		local prefix_plain_len
-		prefix_plain_len=$(_nav_visible_len "$prefix_text")
-		local suffix_text
-		suffix_text=$(printf '%s  %s%d/%d entries%s' "$C_HINT" "$C_RESET" "$display_sel" "$count" "$C_RESET")
-		local suffix_plain_len
-		suffix_plain_len=$(_nav_visible_len "$suffix_text")
+		local suffix_plain="  ${display_sel}/${count} entries"
 		local path_display="$dir"
-		local path_budget=$(( term_cols - prefix_plain_len - suffix_plain_len - 2 ))
+		local path_budget=$(( term_cols - 8 - ${#suffix_plain} - 2 ))
 		(( path_budget < 0 )) && path_budget=0
 		if (( ${#path_display} > path_budget )); then
 			path_display="${path_display: -$path_budget}"
 		fi
-		local pad_count=$(( term_cols - prefix_plain_len - ${#path_display} - suffix_plain_len ))
+		local pad_count=$(( term_cols - 8 - ${#path_display} - ${#suffix_plain} ))
 		(( pad_count < 0 )) && pad_count=0
-		printf '%b%s%*s%b\n' "$prefix_text" "$path_display" "$pad_count" '' "$suffix_text"
-		local rule_text
-		rule_text=$(printf '%s%s%s' "$C_SEP" "$rule" "$C_RESET")
-		local rule_plain_len
-		rule_plain_len=$(_nav_visible_len "$rule_text")
-		local rule_pad=$(( term_cols - rule_plain_len ))
-		(( rule_pad < 0 )) && rule_pad=0
-		printf '%b' "$rule_text"
-		printf '%*s' "$rule_pad" ''
-		printf '\n'
+		printf -v spaces '%*s' "$pad_count" ''
+		out+="${EL} ${C_DIR}${C_PATH}nav${C_RESET}  ${C_HINT}⎇${C_RESET} ${path_display}${spaces}"
+		out+="${C_HINT}  ${C_RESET}${display_sel}/${count} entries${C_RESET}${NL}"
+		out+="${EL}${C_SEP}${rule}${C_RESET}${NL}"
 
 		if [[ "$count" -eq 0 ]]; then
-			local empty_text
-			empty_text=$(printf '  %s(répertoire vide)%s' "$C_EMPTY" "$C_RESET")
-			local empty_plain_len
-			empty_plain_len=$(_nav_visible_len "$empty_text")
-			local empty_pad=$(( term_cols - empty_plain_len ))
-			(( empty_pad < 0 )) && empty_pad=0
-			printf '%b' "$empty_text"
-			printf '%*s' "$empty_pad" ''
-			printf '\n'
+			out+="${EL}  ${C_EMPTY}(répertoire vide)${C_RESET}${NL}"
 			local empty_rows=$(( viewport_size - 2 ))
 			[[ "$empty_rows" -lt 1 ]] && empty_rows=1
 			for (( i=0; i<empty_rows; i++ )); do
-				printf '%*s\n' "$term_cols" ''
+				out+="${EL}${NL}"
 			done
-			local bottom_rule_text
-			bottom_rule_text=$(printf ' %s%s%s' "$C_SEP" "$rule" "$C_RESET")
-			local bottom_rule_plain_len
-			bottom_rule_plain_len=$(_nav_visible_len "$bottom_rule_text")
-			local bottom_rule_pad=$(( term_cols - bottom_rule_plain_len ))
-			(( bottom_rule_pad < 0 )) && bottom_rule_pad=0
-			printf '%b' "$bottom_rule_text"
-			printf '%*s' "$bottom_rule_pad" ''
-			printf '\n'
-			local help_text
-			help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' "$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
-			local help_plain_len
-			help_plain_len=$(_nav_visible_len "$help_text")
-			local help_pad=$(( term_cols - help_plain_len ))
-			(( help_pad < 0 )) && help_pad=0
-			printf '%b' "$help_text"
-			printf '%*s' "$help_pad" ''
-			printf '\n'
+			out+="${bottom_rule_line}${help_line}"$'\033[J'
+			printf '%s' "$out"
 			return
 		fi
 
-		local preview_active=0
 		if [[ "$help_visible" -eq 1 ]]; then
-			preview_active=1
 			preview_dir="$current_dir"
-		elif [[ "$count" -gt 0 ]]; then
-			preview_active=1
+		else
 			preview_dir="${entries[$sel]}"
 		fi
 
@@ -544,25 +480,18 @@ nav() {
 		local -a right_lines=()
 		for (( i=viewport_start; i<end; i++ )); do
 			name="${entries[$i]}"
-			base="${name##*/}"
-			label="$base"
-			if [[ -d "$name" ]]; then
-				label="${base}/"
-			fi
+			label="${name##*/}"
+			[[ -d "$name" ]] && label+="/"
 			if [[ -n "${marked[$i]+x}" ]]; then
 				label="● ${label}"
 			else
 				label="○ ${label}"
 			fi
-			if [[ "$i" -eq "$sel" ]]; then
-				label=" ${label}"
-			fi
+			[[ "$i" -eq "$sel" ]] && label=" ${label}"
 			if (( ${#label} > left_w - 5 )); then
 				label="${label:0:$(( left_w - 6 ))}…"
 			fi
-			local pad=$(( left_w - ${#label} ))
-			local spaces
-			printf -v spaces '%*s' "$pad" ''
+			printf -v spaces '%*s' $(( left_w - ${#label} )) ''
 			if [[ "$i" -eq "$sel" ]]; then
 				left_rendered+=("${C_SEL}${label}${spaces}${C_RESET}")
 			elif [[ -d "$name" ]]; then
@@ -586,11 +515,8 @@ nav() {
 			right_lines+=(" ${C_PRE_DIR}[h]${C_RESET} hidden")
 			right_lines+=(" ${C_PRE_DIR}[?]${C_RESET} help")
 			right_lines+=(" ${C_PRE_DIR}[q]${C_RESET} quit")
-		elif [[ "$preview_active" -eq 1 ]]; then
-			local raw_preview
-			while IFS= read -r -d $'\0' raw_preview; do
-				right_lines+=("$raw_preview")
-			done < <(_nav_preview_lines "$preview_dir" "$right_w" "$viewport_size")
+		else
+			_nav_preview_lines "$preview_dir" "$right_w" "$viewport_size"
 		fi
 
 		local n_left="${#left_rendered[@]}"
@@ -598,38 +524,22 @@ nav() {
 		local n_rows=$(( n_left > n_right ? n_left : n_right ))
 		[[ "$n_rows" -gt "$viewport_size" ]] && n_rows="$viewport_size"
 
+		local left_blank
+		printf -v left_blank '%*s' "$left_w" ''
 		for (( i=0; i<n_rows; i++ )); do
-			local row_text=''
+			out+="$EL"
 			if [[ "$i" -lt "$n_left" ]]; then
-				row_text+="${left_rendered[$i]}"
+				out+="${left_rendered[$i]}"
 			else
-				row_text+="$(printf '%*s' "$left_w" '')"
+				out+="$left_blank"
 			fi
-			row_text+="${C_PRE_SEP}|${C_RESET}"
-			if [[ "$i" -lt "$n_right" ]]; then
-				local preview_raw="${right_lines[$i]}"
-				local preview_plain_len
-				preview_plain_len=$(_nav_visible_len "$preview_raw")
-				local preview_pad=$(( right_w - preview_plain_len ))
-				(( preview_pad < 0 )) && preview_pad=0
-				row_text+="$preview_raw"
-				row_text+="$(printf '%*s' "$preview_pad" '')"
-			else
-				row_text+="$(printf '%*s' "$right_w" '')"
-			fi
-			local row_plain_len
-			row_plain_len=$(_nav_visible_len "$row_text")
-			local row_pad=$(( term_cols - row_plain_len ))
-			(( row_pad < 0 )) && row_pad=0
-			printf '%b' "$row_text"
-			printf '%*s' "$row_pad" ''
-			printf '\n'
+			out+="${C_PRE_SEP}|${C_RESET}"
+			[[ "$i" -lt "$n_right" ]] && out+="${right_lines[$i]}"
+			out+="$NL"
 		done
 
 		for (( i = n_rows; i < viewport_size; i++ )); do
-			local blank_line
-			printf -v blank_line '%*s' "$term_cols" ''
-			printf '%s\n' "$blank_line"
+			out+="${EL}${NL}"
 		done
 
 		txt=""
@@ -638,51 +548,16 @@ nav() {
 		if [[ -n $txt ]]; then
 			v=$(( term_cols - 6 - ${#txt} )); (( v < 0 )) && v=0
 			printf -v fill '%*s' "$v" ''; fill=${fill// /─}
-			local footer_text
-			footer_text=$(printf ' %s── %s %s%s' "$C_SEP" "$txt" "$fill" "$C_RESET")
-			local footer_plain_len
-			footer_plain_len=$(_nav_visible_len "$footer_text")
-			local footer_pad=$(( term_cols - footer_plain_len ))
-			(( footer_pad < 0 )) && footer_pad=0
-			printf '%b' "$footer_text"
-			printf '%*s' "$footer_pad" ''
-			printf '\n'
+			out+="${EL} ${C_SEP}── ${txt} ${fill}${C_RESET}${NL}"
 		else
-			local bottom_rule_text
-			bottom_rule_text=$(printf ' %s%s%s' "$C_SEP" "$rule" "$C_RESET")
-			local bottom_rule_plain_len
-			bottom_rule_plain_len=$(_nav_visible_len "$bottom_rule_text")
-			local bottom_rule_pad=$(( term_cols - bottom_rule_plain_len ))
-			(( bottom_rule_pad < 0 )) && bottom_rule_pad=0
-			printf '%b' "$bottom_rule_text"
-			printf '%*s' "$bottom_rule_pad" ''
-			printf '\n'
+			out+="$bottom_rule_line"
 		fi
 
-		if [[ -n "$status_msg" ]]; then
-			local status_text
-			status_text=$(printf ' %s%s%s' "$C_HINT" "$status_msg" "$C_RESET")
-			local status_plain_len
-			status_plain_len=$(_nav_visible_len "$status_text")
-			local status_pad=$(( term_cols - status_plain_len ))
-			(( status_pad < 0 )) && status_pad=0
-			printf '%b' "$status_text"
-			printf '%*s' "$status_pad" ''
-			printf '\n'
-		fi
+		[[ -n "$status_msg" ]] && out+="${EL} ${C_HINT}${status_msg}${C_RESET}${NL}"
+		[[ "$help_visible" -eq 0 ]] && out+="$help_line"
 
-		if [[ "$help_visible" -eq 0 ]]; then
-			local help_text
-			help_text=$(printf ' %sPRESS %s[%s?%s]%s for help%s' \
-				"$C_DIR" "$C_HINT" "$C_DIR" "$C_HINT" "$C_RESET" "$C_RESET")
-			local help_plain_len
-			help_plain_len=$(_nav_visible_len "$help_text")
-			local help_pad=$(( term_cols - help_plain_len ))
-			(( help_pad < 0 )) && help_pad=0
-			printf '%b' "$help_text"
-			printf '%*s' "$help_pad" ''
-			printf '\n'
-		fi
+		out+=$'\033[J'
+		printf '%s' "$out"
 	}
 
 	_nav_handle_key() {
@@ -754,7 +629,7 @@ nav() {
 						viewport_start=0
 						marked=()
 						marked_order=()
-						mapfile -t entries < <(_nav_list "$current_dir")
+						_nav_scan entries "$current_dir"
 						need_relist=0
 						local pi
 						for (( pi=0; pi<${#entries[@]}; pi++ )); do
@@ -763,9 +638,7 @@ nav() {
 								break
 							fi
 						done
-						local pterm_lines
-						pterm_lines="$(tput lines)"
-						local pvp_size=$(( pterm_lines - 7 ))
+						local pvp_size=$(( nav_lines - 7 ))
 						[[ "$pvp_size" -lt 1 ]] && pvp_size=1
 						viewport_start=0
 						if [[ "$selected" -ge "$pvp_size" ]]; then
@@ -840,6 +713,7 @@ nav() {
 					tput smcup
 					tput civis
 					need_relist=1
+					nav_resized=1
 					cache_dir=""
 					cache_selected=-1
 					cache_viewport=-1
@@ -930,7 +804,7 @@ nav() {
 				status_msg="Delete ${#remove_targets[@]} item(s)? [y/N]"
 				need_relist=1
 				cache_status=""
-				_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
+				_nav_draw
 				local answer
 				while true; do
 					_nav_read_key answer
@@ -1008,17 +882,20 @@ nav() {
 	local need_relist=1
 
 	while true; do
+		if [[ "$nav_resized" -eq 1 ]]; then
+			nav_resized=0
+			nav_lines="$(tput lines)"
+			nav_cols="$(tput cols)"
+		fi
 		if [[ "$need_relist" -eq 1 || "$current_dir" != "$cache_dir" ]]; then
-			mapfile -t entries < <(_nav_list "$current_dir")
+			_nav_scan entries "$current_dir"
 			need_relist=0
 		fi
 		local count="${#entries[@]}"
 		[[ "$count" -eq 0 ]] && selected=0
 		[[ "$selected" -ge "$count" && "$count" -gt 0 ]] && selected=$(( count - 1 ))
 
-		local term_lines term_cols_now
-		term_lines="$(tput lines)"
-		term_cols_now="$(tput cols)"
+		local term_lines="$nav_lines" term_cols_now="$nav_cols"
 		local viewport_size=$(( term_lines - 7 ))
 		[[ "$viewport_size" -lt 1 ]] && viewport_size=1
 
@@ -1029,7 +906,7 @@ nav() {
 		fi
 
 		if [[ "$need_relist" -eq 1 || "$current_dir" != "$cache_dir" || "$selected" -ne "$cache_selected" || "$viewport_start" -ne "$cache_viewport" || "$term_cols_now" -ne "$cache_cols" || "$term_lines" -ne "$cache_lines" || "$status_msg" != "$cache_status" || "$help_visible" -ne "$cache_help_visible" || "$show_hidden" -ne "$cache_show_hidden" ]]; then
-			_nav_draw "$current_dir" "$selected" "$count" "$viewport_start" "$viewport_size" "${entries[@]}"
+			_nav_draw
 			cache_dir="$current_dir"
 			cache_selected="$selected"
 			cache_viewport="$viewport_start"
@@ -1041,16 +918,13 @@ nav() {
 			need_relist=0
 		fi
 
-		local -a queued_keys=()
-		while true; do
-			if ! _nav_read_key key 0.03; then
-				break
-			fi
+		# Wait for a key (the timeout only lets us notice resizes), then
+		# drain whatever is already buffered so key-repeat renders once.
+		_nav_read_key key 0.25 || continue
+		local -a queued_keys=("$key")
+		while read -t 0 && _nav_read_key key; do
 			queued_keys+=("$key")
 		done
-		if (( ${#queued_keys[@]} == 0 )); then
-			continue
-		fi
 		for key in "${queued_keys[@]}"; do
 			_nav_handle_key "$key"
 			if [[ "$nav_exit_requested" -eq 1 ]]; then
