@@ -473,3 +473,287 @@ gsc() {
     git commit -m "$msg" || return 1
     if git rev-parse --abbrev-ref '@{u}' &>/dev/null; then git push; else git push -u origin HEAD; fi
 }
+
+grc() {
+    git rev-parse --is-inside-work-tree &>/dev/null || { echo "not a git repo"; return 1; }
+
+    local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m'
+    local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' CYN=$'\e[36m'
+    local BG=$'\e[48;5;237m'
+
+    local -a hashes=() dates=() authors=() bodies=()
+    local h a d m
+    while IFS=$'\x1f' read -r -d $'\x1e' h a d m; do
+        h=${h#$'\n'}
+        hashes+=("$h"); authors+=("$a"); dates+=("$d"); bodies+=("$m")
+    done < <(git log --format='%h%x1f%an%x1f%ar%x1f%B%x1e' 2>/dev/null)
+
+    local n=${#hashes[@]}
+    (( n == 0 )) && { echo "no commits yet"; return 0; }
+
+    local cur=0 top=0 go=0 note="" cached=-1 cached_w=0
+    local k rest i idx end cols rows vis left_w right_w rule txt fill bg ptr box line old branch pill
+    local -a msg_lines=()
+    branch=$(git branch --show-current)
+    old=$(stty -g); stty -echo -isig
+    tput smcup; tput civis
+
+    while true; do
+        cols=$(tput cols); rows=$(tput lines)
+        vis=$(( rows - 6 )); (( vis < 3 )) && vis=3
+        left_w=30
+        right_w=$(( cols - left_w - 4 )); (( right_w < 10 )) && right_w=10
+        (( cur < top )) && top=$cur
+        (( cur >= top + vis )) && top=$(( cur - vis + 1 ))
+        end=$(( top + vis )); (( end > n )) && end=$n
+
+        if (( cached != cur || cached_w != right_w )); then
+            msg_lines=("${B}${authors[cur]}${R}  ${D}${dates[cur]}${R}" "")
+            while IFS= read -r line; do msg_lines+=("$line"); done \
+                < <(printf '%s\n' "${bodies[cur]}" | fold -sw "$(( right_w - 1 ))")
+            cached=$cur; cached_w=$right_w
+        fi
+
+        printf '\e[H\e[J'
+        pill=$'\e[30;41m REVERT \e[0m'
+        printf ' %s%sgrc%s  %s⎇%s %s%s%s   %s   %s%d/%d%s\n' \
+            "$B" "$CYN" "$R" "$D" "$R" "$B" "$branch" "$R" "$pill" "$D" "$((cur + 1))" "$n" "$R"
+        printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
+        printf ' %s%s%s\n' "$D" "$rule" "$R"
+
+        for (( i = 0; i < vis; i++ )); do
+            idx=$(( top + i ))
+            if (( idx < end )); then
+                bg=""; ptr=" "
+                if (( idx == cur )); then bg=$BG; ptr="${CYN}▌"; fi
+                if (( idx == 0 )); then box="${GRN}●"; else box="${D}○"; fi
+                line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${YEL}${B}${hashes[idx]}${R}${bg}"
+                printf '%s' "$line"
+                printf '%*s%s' $(( left_w - ${#hashes[idx]} - 6 )) '' "$R"
+            else
+                printf '%*s' "$left_w" ''
+            fi
+            printf ' %s│%s ' "$CYN" "$R"
+            (( i < ${#msg_lines[@]} )) && printf '%s' "${msg_lines[i]}"
+            printf '\e[K\n'
+        done
+
+        txt=""
+        (( top > 0 )) && txt+="↑ $top more  "
+        (( end < n )) && txt+="↓ $(( n - end )) more"
+        if [[ -n $txt ]]; then
+            fill=$(( cols - 6 - ${#txt} )); (( fill < 0 )) && fill=0
+            printf -v rule '%*s' "$fill" ''; rule=${rule// /─}
+            printf ' %s── %s %s%s\n' "$D" "$txt" "$rule" "$R"
+        else
+            printf ' %s%s%s\n' "$D" "$rule" "$R"
+        fi
+        if [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
+        printf ' %s↑↓%s%s move%s  %senter%s%s revert to commit%s  %sq%s%s quit%s' \
+            "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R"
+
+        IFS= read -rsn1 k
+        note=""
+        if [[ $k == $'\e' ]]; then
+            rest=""; IFS= read -rsn2 -t 0.05 rest
+            case $rest in
+                "[A") k=UP ;; "[B") k=DOWN ;;
+                "[5") IFS= read -rsn1 -t 0.05 _; k=PGUP ;;
+                "[6") IFS= read -rsn1 -t 0.05 _; k=PGDN ;;
+                "") k=ESC ;;
+                *) k=IGN ;;
+            esac
+        fi
+
+        case $k in
+            UP|k)   (( cur > 0 )) && (( cur-- )) ;;
+            DOWN|j) (( cur < n - 1 )) && (( cur++ )) ;;
+            PGUP)   (( cur -= vis )); (( cur < 0 )) && cur=0 ;;
+            PGDN)   (( cur += vis )); (( cur > n - 1 )) && cur=$(( n - 1 )) ;;
+            q|ESC|$'\x03') break ;;
+            "")
+                if (( cur == 0 )); then note="already at this commit (HEAD)"; continue; fi
+                tput cup $(( rows - 1 )) 0; tput el
+                printf ' \e[30;41m REVERT \e[0m Revert %d commit(s) back to %s? %s(y/n)%s ' \
+                    "$cur" "${hashes[cur]}" "$B" "$R"
+                IFS= read -rsn1 k
+                [[ $k == [yYoO] ]] && { go=1; break; }
+                ;;
+        esac
+    done
+
+    tput cnorm; tput rmcup; stty "$old"
+    (( go )) || return 0
+
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        echo -e "${RED}grc: you have uncommitted changes, commit or stash them first${R}" >&2
+        return 1
+    fi
+    local target=${hashes[cur]} subject=${bodies[cur]%%$'\n'*}
+    if git revert --no-commit "$target..HEAD"; then
+        git commit -q -m "Revert to $target: $subject" \
+            && echo -e "${GRN}Reverted to $target${R} ($cur commit(s) undone)"
+    else
+        git revert --abort 2>/dev/null
+        echo -e "${RED}grc: revert failed (conflict or merge commit in range), nothing changed${R}" >&2
+        return 1
+    fi
+}
+
+gcp() {
+    git rev-parse --is-inside-work-tree &>/dev/null || { echo "not a git repo"; return 1; }
+    git rev-parse -q --verify HEAD &>/dev/null || { echo "no commits yet"; return 1; }
+
+    local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m'
+    local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' CYN=$'\e[36m'
+    local BG=$'\e[48;5;237m'
+
+    local branch=$(git branch --show-current)
+    [[ -z $branch ]] && branch=$(git rev-parse --short HEAD)
+    local -a srcs=()
+    local s sym
+    while IFS=' ' read -r s sym; do
+        [[ -n $sym || $s == "$branch" ]] && continue
+        srcs+=("$s")
+    done < <(git for-each-ref --format='%(refname:short) %(symref)' refs/heads refs/remotes)
+    local nb=${#srcs[@]}
+    (( nb == 0 )) && { echo "gcp: no other branch to pick from"; return 1; }
+
+    local -a hashes=() dates=() authors=() bodies=() checked=()
+    local sb=0 n=0
+    _gcp_load() {
+        hashes=(); dates=(); authors=(); bodies=(); checked=()
+        local h a d m
+        while IFS=$'\x1f' read -r -d $'\x1e' h a d m; do
+            h=${h#$'\n'}
+            hashes+=("$h"); authors+=("$a"); dates+=("$d"); bodies+=("$m"); checked+=(0)
+        done < <(git log --right-only --cherry-pick --no-merges \
+                    --format='%h%x1f%an%x1f%ar%x1f%B%x1e' "HEAD...${srcs[sb]}" 2>/dev/null)
+        n=${#hashes[@]}
+    }
+    _gcp_load
+
+    local cur=0 top=0 go=0 note="" cached=-1 cached_w=0 c
+    local k rest i idx end cols rows vis left_w right_w rule txt fill bg ptr box line old pill
+    local -a msg_lines=() picks=()
+    old=$(stty -g); stty -echo -isig
+    tput smcup; tput civis
+
+    while true; do
+        cols=$(tput cols); rows=$(tput lines)
+        vis=$(( rows - 6 )); (( vis < 3 )) && vis=3
+        left_w=30
+        right_w=$(( cols - left_w - 4 )); (( right_w < 10 )) && right_w=10
+        (( cur < top )) && top=$cur
+        (( cur >= top + vis )) && top=$(( cur - vis + 1 ))
+        end=$(( top + vis )); (( end > n )) && end=$n
+        c=0; for i in "${checked[@]}"; do (( c += i )); done
+
+        if (( cached != cur || cached_w != right_w )); then
+            msg_lines=()
+            if (( n > 0 )); then
+                msg_lines=("${B}${authors[cur]}${R}  ${D}${dates[cur]}${R}" "")
+                while IFS= read -r line; do msg_lines+=("$line"); done \
+                    < <(printf '%s\n' "${bodies[cur]}" | fold -sw "$(( right_w - 1 ))")
+            fi
+            cached=$cur; cached_w=$right_w
+        fi
+
+        printf '\e[H\e[J'
+        pill=$'\e[30;42m CHERRY-PICK \e[0m'
+        printf ' %s%sgcp%s  %s←%s %s%s%s %s→%s  into %s⎇%s %s%s%s   %s   %s%d/%d selected%s\n' \
+            "$B" "$CYN" "$R" "$D" "$R" "$B$YEL" "${srcs[sb]}" "$R" "$D" "$R" \
+            "$D" "$R" "$B" "$branch" "$R" "$pill" "$D" "$c" "$n" "$R"
+        printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
+        printf ' %s%s%s\n' "$D" "$rule" "$R"
+
+        for (( i = 0; i < vis; i++ )); do
+            idx=$(( top + i ))
+            if (( n == 0 && i == 0 )); then
+                printf '   %s(nothing new to pick)%s' "$D" "$R"
+                printf '%*s' $(( left_w - 25 )) ''
+            elif (( idx < end )); then
+                bg=""; ptr=" "
+                if (( idx == cur )); then bg=$BG; ptr="${CYN}▌"; fi
+                if (( checked[idx] )); then box="${GRN}●"; else box="${D}○"; fi
+                line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${YEL}${B}${hashes[idx]}${R}${bg}"
+                printf '%s' "$line"
+                printf '%*s%s' $(( left_w - ${#hashes[idx]} - 6 )) '' "$R"
+            else
+                printf '%*s' "$left_w" ''
+            fi
+            printf ' %s│%s ' "$CYN" "$R"
+            (( i < ${#msg_lines[@]} )) && printf '%s' "${msg_lines[i]}"
+            printf '\e[K\n'
+        done
+
+        txt=""
+        (( top > 0 )) && txt+="↑ $top more  "
+        (( end < n )) && txt+="↓ $(( n - end )) more"
+        if [[ -n $txt ]]; then
+            fill=$(( cols - 6 - ${#txt} )); (( fill < 0 )) && fill=0
+            printf -v rule '%*s' "$fill" ''; rule=${rule// /─}
+            printf ' %s── %s %s%s\n' "$D" "$txt" "$rule" "$R"
+        else
+            printf ' %s%s%s\n' "$D" "$rule" "$R"
+        fi
+        if [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
+        printf ' %s↑↓%s%s move%s  %s←→%s%s branch%s  %sspace%s%s toggle%s  %sa%s%s all%s  %senter%s%s pick%s  %sq%s%s quit%s' \
+            "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" \
+            "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R"
+
+        IFS= read -rsn1 k
+        note=""
+        if [[ $k == $'\e' ]]; then
+            rest=""; IFS= read -rsn2 -t 0.05 rest
+            case $rest in
+                "[A") k=UP ;; "[B") k=DOWN ;; "[C") k=RIGHT ;; "[D") k=LEFT ;;
+                "[5") IFS= read -rsn1 -t 0.05 _; k=PGUP ;;
+                "[6") IFS= read -rsn1 -t 0.05 _; k=PGDN ;;
+                "") k=ESC ;;
+                *) k=IGN ;;
+            esac
+        fi
+
+        case $k in
+            UP|k)   (( cur > 0 )) && (( cur-- )) ;;
+            DOWN|j) (( cur < n - 1 )) && (( cur++ )) ;;
+            PGUP)   (( cur -= vis )); (( cur < 0 )) && cur=0 ;;
+            PGDN)   (( cur += vis )); (( cur > n - 1 )) && cur=$(( n - 1 )); (( cur < 0 )) && cur=0 ;;
+            LEFT|h|RIGHT|l|$'\t')
+                if [[ $k == LEFT || $k == h ]]; then sb=$(( (sb - 1 + nb) % nb ))
+                else sb=$(( (sb + 1) % nb )); fi
+                _gcp_load; cur=0; top=0; cached=-1 ;;
+            " ")    (( n > 0 )) && checked[cur]=$(( 1 - checked[cur] )) ;;
+            a)      local v=1; (( c == n )) && v=0
+                    for (( i = 0; i < n; i++ )); do checked[i]=$v; done ;;
+            q|ESC|$'\x03') break ;;
+            "")
+                if (( n == 0 )); then note="nothing to pick on ${srcs[sb]}"; continue; fi
+                (( c == 0 )) && checked[cur]=1 && c=1
+                tput cup $(( rows - 1 )) 0; tput el
+                printf ' \e[30;42m PICK \e[0m Cherry-pick %d commit(s) from %s into %s? %s(y/n)%s ' \
+                    "$c" "${srcs[sb]}" "$branch" "$B" "$R"
+                IFS= read -rsn1 k
+                [[ $k == [yYoO] ]] && { go=1; break; }
+                ;;
+        esac
+    done
+
+    tput cnorm; tput rmcup; stty "$old"
+    unset -f _gcp_load
+    (( go )) || return 0
+
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        echo -e "${RED}gcp: you have uncommitted changes, commit or stash them first${R}" >&2
+        return 1
+    fi
+    for (( i = n - 1; i >= 0; i-- )); do (( checked[i] )) && picks+=("${hashes[i]}"); done
+    if git cherry-pick "${picks[@]}"; then
+        echo -e "${GRN}Picked ${#picks[@]} commit(s) from ${srcs[sb]} into $branch${R}"
+    else
+        echo -e "${YEL}gcp: conflict. Fix the files, then 'git add' + 'git cherry-pick --continue'${R}" >&2
+        echo -e "${YEL}     or cancel everything with 'git cherry-pick --abort'${R}" >&2
+        return 1
+    fi
+}
