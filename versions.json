@@ -1,5 +1,14 @@
 [
     {
+        "version": "2.5.0",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.5.0/Bash42.zip",
+        "sha256": "beba06d42e8f332a68c64c380487812160bd1c6fbbf74e24f4cd55b55f6e5276",
+        "changelog": [
+            "Updated: nav (redraws ~15x faster)",
+            "  Added: grc, gcp"
+        ]
+    },
+    {
         "version": "2.4.1",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.4.1/Bash42.zip",
         "sha256": "5577fac4b6a79be3d7a03f29aee2a20ec9670def05d02ee6e53fa0588fcacf01",
