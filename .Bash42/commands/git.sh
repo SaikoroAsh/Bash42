@@ -485,81 +485,110 @@ gsc() {
 grc() {
     git rev-parse --is-inside-work-tree &>/dev/null || { echo "not a git repo"; return 1; }
     # Internal helpers are removed once grc returns
-    trap 'unset -f _grc_load _grc_reword; trap - RETURN' RETURN
+    trap 'unset -f _grc_load _grc_more _grc_reword; trap - RETURN' RETURN
 
     local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m'
     local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' CYN=$'\e[36m'
     local BG=$'\e[48;5;237m'
 
+    # Commits are loaded 300 at a time while scrolling, so huge repos open instantly
     local -a hashes=() dates=() authors=() bodies=()
-    local n=0
-    _grc_load() {
-        hashes=(); dates=(); authors=(); bodies=()
-        local h a d m
+    local n=0 total=0 loaded_all=0
+    _grc_more() {
+        (( loaded_all )) && return
+        local h a d m count=0
         while IFS=$'\x1f' read -r -d $'\x1e' h a d m; do
             h=${h#$'\n'}
             hashes+=("$h"); authors+=("$a"); dates+=("$d"); bodies+=("$m")
-        done < <(git log --format='%h%x1f%an%x1f%ar%x1f%B%x1e' 2>/dev/null)
+            (( count++ ))
+        done < <(git log --skip="$n" -n 300 --format='%h%x1f%an%x1f%ar%x1f%B%x1e' 2>/dev/null)
         n=${#hashes[@]}
+        (( count < 300 )) && loaded_all=1
+    }
+    _grc_load() {
+        hashes=(); dates=(); authors=(); bodies=(); n=0; loaded_all=0
+        total=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+        _grc_more
     }
 
-    # Replace the message of commit number $1 with $2: amend for HEAD, otherwise
-    # a rebase that only rewords that commit (tree and other commits stay the same)
+    # Replace the message of commit number $1 with $2. A message change never changes files,
+    # so that commit and every commit after it are rebuilt with their exact same content
+    # (git commit-tree) instead of being replayed by a rebase: nothing can conflict, merges and
+    # the first commit work too, and the working tree and index are left untouched.
+    # On failure, REPLY holds the reason and nothing is changed.
     _grc_reword() {
-        local tmp short=${hashes[$1]} rc base
-        tmp=$(mktemp) || return 1
-        printf '%s\n' "$2" > "$tmp"
-        if (( $1 == 0 )); then
-            # --only without paths: staged changes are not added to the amended commit
-            git commit -q --amend --only --cleanup=whitespace -F "$tmp" >/dev/null 2>&1
-            rc=$?
-        else
-            if git rev-parse -q --verify "$short^" >/dev/null; then base="$short^"; else base="--root"; fi
-            GIT_SEQUENCE_EDITOR="sed -i 's/^pick $short\([0-9a-f]*\) /reword $short\1 /'" GIT_EDITOR="cp '$tmp'" \
-                git -c commit.cleanup=whitespace rebase -q -i --autostash --rebase-merges $base >/dev/null 2>&1
-            rc=$?
-            (( rc )) && git rebase --abort >/dev/null 2>&1
-        fi
-        rm -f -- "$tmp"
-        return $rc
+        local target head c p new msg an ae ad
+        local -a parents args
+        local -A map=()
+        REPLY=""
+        target=$(git rev-parse "${hashes[$1]}") && head=$(git rev-parse HEAD) || { REPLY="cannot read the history"; return 1; }
+        msg=$(mktemp) || { REPLY="could not create a temporary file"; return 1; }
+        for c in "$target" $(git rev-list --reverse --topo-order --ancestry-path "$target..HEAD"); do
+            # Parents that were rebuilt are replaced by their new version
+            read -r -a parents <<< "$(git rev-list --parents -n 1 "$c")"
+            args=()
+            for p in "${parents[@]:1}"; do args+=(-p "${map[$p]:-$p}"); done
+            if [[ $c == "$target" ]]; then printf '%s\n' "$2" > "$msg"
+            else git cat-file commit "$c" | sed '1,/^$/d' > "$msg"; fi
+            IFS=$'\x1f' read -r an ae ad < <(git log -1 --format='%an%x1f%ae%x1f%ad' --date=raw "$c")
+            new=$(GIT_AUTHOR_NAME=$an GIT_AUTHOR_EMAIL=$ae GIT_AUTHOR_DATE=$ad \
+                git commit-tree "$c^{tree}" "${args[@]}" -F "$msg" 2>/dev/null) \
+                || { rm -f -- "$msg"; REPLY="could not rebuild commit ${c:0:7}"; return 1; }
+            map[$c]=$new
+        done
+        rm -f -- "$msg"
+        # Only moves the branch: HEAD's files are identical, so status, index and working tree stay as they are
+        git update-ref -m "grc: edit message of ${hashes[$1]}" HEAD "${map[$head]}" "$head" 2>/dev/null \
+            || { REPLY="the branch moved while editing, try again"; return 1; }
     }
 
     _grc_load
     (( n == 0 )) && { echo "no commits yet"; return 0; }
 
-    local cur=0 top=0 go=0 note="" ok=0 cached=-1 cached_w=0 pushed=0 pending="" full orig tmp editor
-    local k rest i idx end cols rows vis left_w right_w rule txt fill bg ptr box line old branch pill
+    local cur=0 top=0 go=0 note="" ok=0 cached=-1 cached_w=0 cached_vis=0 pending="" warn="" full orig tmp editor h1 h2
+    local -a lines=() refs=()
+    local k rest i idx end cols rows vis left_w right_w rule txt fill bg ptr box line old branch pill frame col
     local -a msg_lines=()
     branch=$(git branch --show-current)
     old=$(stty -g); stty -echo -isig
     tput smcup; tput civis
+    printf '\e[?7l'
 
     while true; do
         cols=$(tput cols); rows=$(tput lines)
         vis=$(( rows - 6 )); (( vis < 3 )) && vis=3
+        # Load more commits as soon as the view gets close to the end of what is loaded
+        while (( !loaded_all && cur + vis >= n )); do _grc_more; done
+        (( cur > n - 1 )) && cur=$(( n - 1 ))
         left_w=30
         right_w=$(( cols - left_w - 4 )); (( right_w < 10 )) && right_w=10
         (( cur < top )) && top=$cur
         (( cur >= top + vis )) && top=$(( cur - vis + 1 ))
         end=$(( top + vis )); (( end > n )) && end=$n
 
-        if (( cached != cur || cached_w != right_w )); then
+        if (( cached != cur || cached_w != right_w || cached_vis != vis )); then
             if [[ -n $pending ]]; then
                 msg_lines=("${YEL}${B}new message${R}" ""); txt=$pending
             else
                 msg_lines=("${B}${authors[cur]}${R}  ${D}${dates[cur]}${R}" ""); txt=${bodies[cur]}
             fi
             while IFS= read -r line; do msg_lines+=("$line"); done \
-                < <(printf '%s\n' "$txt" | fold -sw "$(( right_w - 1 ))")
-            cached=$cur; cached_w=$right_w
+                < <(printf '%s\n' "${txt%$'\n'}" | fold -sw "$(( right_w - 1 ))")
+            # A message taller than the panel ends with how much is hidden
+            if (( ${#msg_lines[@]} > vis )); then
+                msg_lines=("${msg_lines[@]:0:vis-1}" "${D}… $(( ${#msg_lines[@]} - vis + 1 )) more lines${R}")
+            fi
+            cached=$cur; cached_w=$right_w; cached_vis=$vis
         fi
 
-        printf '\e[H\e[J'
-        pill=$'\e[30;41m REVERT \e[0m'
-        printf ' %s%sgrc%s  %s⎇%s %s%s%s   %s   %s%d/%d%s\n' \
-            "$B" "$CYN" "$R" "$D" "$R" "$B" "$branch" "$R" "$pill" "$D" "$((cur + 1))" "$n" "$R"
+        # The whole frame is built in memory and written in one go to avoid flickering
+        frame=$'\e[H'
+        if [[ -n $pending ]]; then pill=$'\e[30;45m REWORD \e[0m'; else pill=$'\e[30;41m REVERT \e[0m'; fi
+        printf -v line ' %s%sgrc%s  %s⎇%s %s%s%s   %s   %s%d/%d%s\e[K\n' \
+            "$B" "$CYN" "$R" "$D" "$R" "$B" "$branch" "$R" "$pill" "$D" "$((cur + 1))" "$total" "$R"
+        frame+=$line
         printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
-        printf ' %s%s%s\n' "$D" "$rule" "$R"
+        frame+=" ${D}${rule}${R}"$'\e[K\n'
 
         for (( i = 0; i < vis; i++ )); do
             idx=$(( top + i ))
@@ -567,38 +596,40 @@ grc() {
                 bg=""; ptr=" "
                 if (( idx == cur )); then bg=$BG; ptr="${CYN}▌"; fi
                 if (( idx == 0 )); then box="${GRN}●"; else box="${D}○"; fi
-                line="${bg} ${ptr}${R}${bg} ${box}${R}${bg}  ${YEL}${B}${hashes[idx]}${R}${bg}"
-                printf '%s' "$line"
-                printf '%*s%s' $(( left_w - ${#hashes[idx]} - 6 )) '' "$R"
+                printf -v line '%s %s%s%s %s%s%s  %s%s%s%s%*s%s' "$bg" "$ptr" "$R" "$bg" "$box" "$R" "$bg" \
+                    "$YEL$B" "${hashes[idx]}" "$R" "$bg" $(( left_w - ${#hashes[idx]} - 6 )) '' "$R"
             else
-                printf '%*s' "$left_w" ''
+                printf -v line '%*s' "$left_w" ''
             fi
-            printf ' %s│%s ' "$CYN" "$R"
-            (( i < ${#msg_lines[@]} )) && printf '%s' "${msg_lines[i]}"
-            printf '\e[K\n'
+            frame+="$line ${CYN}│${R} ${msg_lines[i]}"$'\e[K\n'
         done
 
         txt=""
         (( top > 0 )) && txt+="↑ $top more  "
-        (( end < n )) && txt+="↓ $(( n - end )) more"
+        (( end < total )) && txt+="↓ $(( total - end )) more"
+        txt=${txt%  }
         if [[ -n $txt ]]; then
             fill=$(( cols - 6 - ${#txt} )); (( fill < 0 )) && fill=0
-            printf -v rule '%*s' "$fill" ''; rule=${rule// /─}
-            printf ' %s── %s %s%s\n' "$D" "$txt" "$rule" "$R"
+            printf -v line '%*s' "$fill" ''
+            frame+=" ${D}── ${txt} ${line// /─}${R}"$'\e[K\n'
         else
-            printf ' %s%s%s\n' "$D" "$rule" "$R"
+            frame+=" ${D}${rule}${R}"$'\e[K\n'
         fi
-        if (( ok )); then printf ' %s✓ %s%s\n' "$GRN" "$note" "$R"
-        elif [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
-        if [[ -n $pending ]] && (( pushed )); then
-            printf ' \e[30;45m REWORD \e[0m %s%salready pushed%s, a force push will be needed. Save the new message? %s(y/n)%s ' \
-                "$RED" "$B" "$R" "$B" "$R"
-        elif [[ -n $pending ]]; then
-            printf ' \e[30;45m REWORD \e[0m Save the new message of %s? %s(y/n)%s ' "${hashes[cur]}" "$B" "$R"
+        # While a new message waits for confirmation, this line lists what the change affects
+        if [[ -n $pending && -n $warn ]]; then txt="⚠ $warn"; col="$RED$B"
+        elif (( ok )); then txt="✓ $note"; col=$GRN
+        elif [[ -n $note ]]; then txt="⚠ $note"; col=$YEL
+        else txt=""; fi
+        (( ${#txt} > cols - 2 )) && txt="${txt:0:cols-3}…"
+        frame+=" ${col}${txt}${R}"$'\e[K\n'
+        if [[ -n $pending ]]; then
+            printf -v line ' \e[30;45m REWORD \e[0m Save the new message of %s? %s(y/n)%s' "${hashes[cur]}" "$B" "$R"
         else
-            printf ' %s↑↓%s%s move%s  %senter%s%s revert to commit%s  %se%s%s edit message%s  %sq%s%s quit%s' \
+            printf -v line ' %s↑↓%s%s move%s  %senter%s%s revert to commit%s  %se%s%s edit message%s  %sq%s%s quit%s' \
                 "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R"
         fi
+        frame+="$line"$'\e[K\e[J'
+        printf '%s' "$frame"
 
         IFS= read -rsn1 k
         note=""; ok=0
@@ -618,9 +649,9 @@ grc() {
                 if _grc_reword "$cur" "$pending"; then
                     _grc_load; ok=1
                     note="message changed"
-                    (( pushed )) && note+=", push it with: git push --force-with-lease"
+                    [[ $warn == pushed* ]] && note+=" · push it with: git push --force-with-lease"
                 else
-                    note="could not change the message, nothing changed"
+                    note="$REPLY, nothing changed"
                 fi
             else
                 note="edit cancelled"
@@ -633,32 +664,41 @@ grc() {
             UP|k)   (( cur > 0 )) && (( cur-- )) ;;
             DOWN|j) (( cur < n - 1 )) && (( cur++ )) ;;
             PGUP)   (( cur -= vis )); (( cur < 0 )) && cur=0 ;;
-            PGDN)   (( cur += vis )); (( cur > n - 1 )) && cur=$(( n - 1 )) ;;
+            PGDN)   (( cur += vis ))
+                    while (( !loaded_all && cur >= n )); do _grc_more; done
+                    (( cur > n - 1 )) && cur=$(( n - 1 )) ;;
             q|ESC|$'\x03') break ;;
             e)
                 if [[ -d $(git rev-parse --git-path rebase-merge) || -d $(git rev-parse --git-path rebase-apply) ]]; then
                     note="a rebase is already in progress, finish it first"; continue
                 fi
-                if (( cur > 0 )) && git rev-parse -q --verify "${hashes[cur]}^2" >/dev/null; then
-                    note="merge commits can only be edited when they are the last commit"; continue
-                fi
-                # Edit the whole message in git's editor (core.editor, $VISUAL, $EDITOR or vi)
+                # Edit the whole message in git's editor (core.editor, $VISUAL, $EDITOR or vi).
+                # Only these two exact lines are removed afterwards, so "#" lines of the message are kept.
+                h1="# ── grc: edit the message of ${hashes[cur]} above, save and quit."
+                h2="# ── grc: an empty message cancels. These two lines are removed."
                 tmp=$(mktemp) || { note="could not create a temporary file"; continue; }
-                printf '%s\n' "${bodies[cur]}" > "$tmp"
-                printf '\n# Edit the message of %s. Lines starting with # are ignored,\n# an empty message cancels the edit.\n' \
-                    "${hashes[cur]}" >> "$tmp"
+                printf '%s\n\n%s\n%s\n' "${bodies[cur]%$'\n'}" "$h1" "$h2" > "$tmp"
                 editor=$(git var GIT_EDITOR)
                 # Leave the alternate screen so the editor gets a normal terminal, then come back
-                tput rmcup; tput cnorm; stty "$old"
+                printf '\e[?7h'; tput rmcup; tput cnorm; stty "$old"
                 eval "$editor \"\$tmp\""
-                stty -echo -isig; tput smcup; tput civis
-                full=$(grep -v '^#' "$tmp"); rm -f -- "$tmp"
-                orig=$(printf '%s' "${bodies[cur]}")
-                if [[ -z ${full//[[:space:]]/} ]]; then note="edit cancelled (empty message)"; continue; fi
+                stty -echo -isig; tput smcup; tput civis; printf '\e[?7l'
+                mapfile -t lines < "$tmp"; rm -f -- "$tmp"
+                full=""
+                for line in "${lines[@]}"; do [[ $line == "$h1" || $line == "$h2" ]] || full+="$line"$'\n'; done
+                # Trailing blank lines are not part of a message
+                full=${full%"${full##*[![:space:]]}"}
+                orig=${bodies[cur]}; orig=${orig%"${orig##*[![:space:]]}"}
+                if [[ -z $full ]]; then note="edit cancelled (empty message)"; continue; fi
                 if [[ $full == "$orig" ]]; then note="message unchanged"; continue; fi
-                # A commit that is already on the upstream branch needs a force push afterwards
-                pushed=0
-                git merge-base --is-ancestor "${hashes[cur]}" '@{u}' 2>/dev/null && pushed=1
+                # Everything else that holds this commit keeps the old version: list it before confirming
+                warn=""
+                mapfile -t refs < <(git branch -r --contains "${hashes[cur]}" --format='%(refname:lstrip=2)' 2>/dev/null | grep -v '/HEAD$')
+                (( ${#refs[@]} )) && warn="pushed (${refs[0]}$( (( ${#refs[@]} > 1 )) && echo " +$(( ${#refs[@]} - 1 ))")): needs force push"
+                mapfile -t refs < <(git branch --contains "${hashes[cur]}" --format='%(refname:short)' 2>/dev/null | grep -v '^(' | grep -vxF -- "$branch")
+                (( ${#refs[@]} )) && warn+="${warn:+ · }also on branch ${refs[0]}$( (( ${#refs[@]} > 1 )) && echo " +$(( ${#refs[@]} - 1 ))")"
+                mapfile -t refs < <(git tag --contains "${hashes[cur]}" 2>/dev/null)
+                (( ${#refs[@]} )) && warn+="${warn:+ · }tag ${refs[0]}$( (( ${#refs[@]} > 1 )) && echo " +$(( ${#refs[@]} - 1 ))") stays on old commit"
                 # The new message is shown on the right and confirmed on the next key
                 pending=$full; cached=-1
                 ;;
@@ -673,6 +713,7 @@ grc() {
         esac
     done
 
+    printf '\e[?7h'
     tput cnorm; tput rmcup; stty "$old"
     (( go )) || return 0
 
