@@ -8,7 +8,8 @@ gg()
         else
                 for arg in "$@"
                 do
-                        find . -name "*.$arg" -exec git add {} +
+                        # Git pathspec: matches at any depth and also stages deleted files
+                        git add -- "*.$arg"
                 done
                 git commit
         fi
@@ -27,16 +28,10 @@ alias gu="git add -u"
 alias gs="git status"
 
 
-alias gpom="git push origin main"
-
-
 alias gp="git push"
 
 
 alias gc="git clone"
-
-
-alias gb="git branch"
 
 
 alias gav="git branch -av"
@@ -63,19 +58,34 @@ gcd()
 
 gd()
 {
-	git commit -m "$1"
-	git push
+	if [[ -z $1 ]]; then
+		echo -e '\033[31mPlease specify a commit message.\033[0m'
+		return 1
+	fi
+	git commit -m "$1" && git push
 }
 
 
 gre()
 {
-	git remote remove origin && echo "Old remote deleted" || echo "Error: Suppression remote"
-	git remote add origin "$1" && echo "New remote added" || echo "Error: Add remote"
-	git push --set-upstream origin main && echo "Push done" || echo "Error: Push"
+	if [[ -z $1 ]]; then
+		echo -e '\033[31mPlease specify the new remote URL.\033[0m'
+		return 1
+	fi
+	git rev-parse --is-inside-work-tree &>/dev/null || { echo "not a git repo"; return 1; }
+	# Check the new remote before touching the current one, so a typo never leaves the repo without origin
+	git ls-remote "$1" &>/dev/null || { echo -e "\033[31mError: cannot reach $1\033[0m"; return 1; }
+	if git remote get-url origin &>/dev/null; then
+		git remote set-url origin "$1" && echo "Remote updated" || { echo "Error: Update remote"; return 1; }
+	else
+		git remote add origin "$1" && echo "New remote added" || { echo "Error: Add remote"; return 1; }
+	fi
+	git push --set-upstream origin "$(git branch --show-current)" && echo "Push done" || echo "Error: Push"
 }
 
 gbr() {
+    # Internal helpers are removed once gbr returns
+    trap 'unset -f _gbr_rebuild_display _gbr_emit; trap - RETURN' RETURN
     git rev-parse --is-inside-work-tree &>/dev/null || { echo "gbr: not a git repository" >&2; return 1; }
 
     local -a branches

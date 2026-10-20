@@ -15,7 +15,7 @@ dir="$(dirname ${BASH_SOURCE[0]})"
 b42()
 {
     welcomebash42
-	python ~/.Bash42/py_commands/b42.py && source ~/.Bash42/bash42.sh
+	python3 ~/.Bash42/py_commands/b42.py && source ~/.Bash42/bash42.sh
 }
 
 
@@ -28,7 +28,7 @@ sl()
 
 create-version-b42()
 {
-	python ~/.Bash42/py_commands/create_version_b42.py
+	python3 ~/.Bash42/py_commands/create_version_b42.py
 }
 
 if [[ $- == *i* ]]; then

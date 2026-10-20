@@ -44,6 +44,14 @@ rv()
 		else
 			echo -e "\xe2\x9c\x85 All files already committed. Be sure to check on github.com if you have pushed on the correct repo."
 		fi
-		echo "Current repository is located at https://github.com/"$(git config --get remote.origin.url | cut -d: -f 2)
+		# Turn git@host:user/repo.git, ssh://git@host/user/repo or https://host/user/repo.git into a web link
+		local url=$(git config --get remote.origin.url)
+		url=${url%.git}
+		case $url in
+			git@*:*) url=${url#git@}; url="https://${url/://}" ;;
+			ssh://*) url=${url#ssh://}; url="https://${url#*@}" ;;
+			https://*@*) url="https://${url#*@}" ;;
+		esac
+		echo "Current repository is located at $url"
 	fi
 }

@@ -1,31 +1,43 @@
 ### Terminal ###
 
-alias vsc="code ."
+unalias vsc 2>/dev/null
+vsc() {
+    code "${1:-.}"
+}
 
+# Usage: cln [-n|--dry-run] [-v|--venv] [path]
+# Removes build and cache leftovers, using the same "safe to delete" rules as fdata.
+# venvs and node_modules are only removed with -v.
 cln() {
-    local rm_venv=0
-    if [ "$1" = "-v" ] || [ "$1" = "venv" ]; then
-        rm_venv=1
-    fi
+    local deps=0 dry=0 path=. arg p
+    for arg in "$@"; do
+        case $arg in
+            -v|--venv|venv) deps=1 ;;
+            -n|--dry-run)   dry=1 ;;
+            *)              path=$arg ;;
+        esac
+    done
 
-    local names='-name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" \)'
-    if [ "$rm_venv" -eq 1 ]; then
-        f=$(find . \( -name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" -o -name ".venv" \) \) 2>/dev/null)
-    else
-        f=$(find . \( -name "a.out" -o -type d \( -name "__pycache__" -o -name ".mypy_cache" \) \) 2>/dev/null)
-    fi
+    local -a found=()
+    while IFS= read -r -d '' p; do
+        _fdata_safe "$p"
+        [[ -z $REPLY ]] && continue
+        [[ $deps -eq 0 && ${p##*/} == @(node_modules|.venv|venv) ]] && continue
+        found+=("$p")
+    done < <(find "$path" -name .git -prune -o \( -name __pycache__ -o -name .mypy_cache -o -name .pytest_cache \
+                -o -name .ruff_cache -o -name .parcel-cache -o -name .turbo -o -name node_modules -o -name .venv \
+                -o -name venv -o -name a.out -o -name '*.o' -o -name '*.pyc' -o -name 'vgcore.*' -o -name 'core.[0-9]*' \) \
+                -prune -print0 2>/dev/null)
 
-    if [ -z "$f" ]; then
+    if [ ${#found[@]} -eq 0 ]; then
         echo "Nothing to clean"
+    elif [ "$dry" -eq 1 ]; then
+        echo "Would delete:"
+        printf '%s\n' "${found[@]}"
     else
         echo "Deleted:"
-        echo "$f"
-        find . -name "a.out" -type f -delete
-        if [ "$rm_venv" -eq 1 ]; then
-            find . -type d \( -name "__pycache__" -o -name ".mypy_cache" -o -name ".venv" \) -exec rm -rf {} +
-        else
-            find . -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -exec rm -rf {} +
-        fi
+        printf '%s\n' "${found[@]}"
+        rm -rf -- "${found[@]}"
     fi
 }
 fm() {
@@ -325,7 +337,10 @@ fdata() {
 }
 
 # Hub: gsc-like full-screen links menu
-hub_ui() {
+unalias hub 2>/dev/null
+hub() {
+	# Internal helpers are removed once hub returns
+	trap 'unset -f _hub_cleanup _open_url; trap - RETURN' RETURN
 	local labels=(
 		"42Next"
 		"Dashboard"
@@ -501,9 +516,9 @@ PY
 	done
 }
 
-alias hub='hub_ui'
-
 nav() {
+	# Internal helpers are removed once nav returns
+	trap 'unset -f _nav_cleanup _nav_read_key _nav_open _nav_is_enter _nav_is_shift_enter _nav_scan _nav_preview_lines _nav_draw _nav_handle_key; trap - RETURN' RETURN
 	# ── Charte graphique : cyan/blanc-gras (style welcome42) ─────
 	local C_RESET=$'\033[0m'
 	local C_DIR=$'\033[1;37m'
@@ -1071,40 +1086,55 @@ nav() {
 				if [[ "$valid" -eq 0 ]]; then
 					return 0
 				fi
+				# Important items (same detection as fdata) need "yes" typed in full
+				local np=0
+				for target in "${remove_targets[@]}"; do
+					_fdata_protected "$target"
+					[[ -n "$REPLY" ]] && (( np++ ))
+				done
 				delete_prompt_active=1
-				status_msg="Delete ${#remove_targets[@]} item(s)? [y/N]"
 				need_relist=1
 				cache_status=""
-				_nav_draw
-				local answer
-				while true; do
-					_nav_read_key answer
-					case "$answer" in
-						y|Y)
-							for target in "${remove_targets[@]}"; do
-								rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
-							done
-							marked=()
-							marked_order=()
-							selected=0
-							viewport_start=0
-							status_msg="Deleted ${#remove_targets[@]} item(s)"
-							need_relist=1
-							delete_prompt_active=0
-							break
-							;;
-						n|N|$'\e')
-							status_msg="Deletion cancelled"
-							need_relist=1
-							delete_prompt_active=0
-							break
-							;;
-						*)
+				local answer confirmed=0
+				if [[ "$np" -gt 0 ]]; then
+					local typed=""
+					while true; do
+						status_msg="${np} protected item(s)! Type yes to delete ${#remove_targets[@]} item(s): ${typed}"
+						_nav_draw
+						_nav_read_key answer
+						case "$answer" in
+							$'\n'|$'\r') [[ "$typed" == yes ]] && confirmed=1; break ;;
+							$'\e') break ;;
+							$'\x7f'|$'\b') typed="${typed%?}" ;;
+							?) typed+="$answer" ;;
+						esac
+					done
+				else
+					status_msg="Delete ${#remove_targets[@]} item(s)? [y/N]"
+					_nav_draw
+					while true; do
+						_nav_read_key answer
+						case "$answer" in
+							y|Y) confirmed=1; break ;;
+							n|N|$'\e') break ;;
 							# Ignore all other keys while the delete confirmation is waiting.
-							continue
-							;;
-					esac
-				done
+						esac
+					done
+				fi
+				if [[ "$confirmed" -eq 1 ]]; then
+					status_msg="Deleted ${#remove_targets[@]} item(s)"
+					for target in "${remove_targets[@]}"; do
+						rm -rf -- "$target" 2>/dev/null || status_msg="Failed to delete: ${target##*/}"
+					done
+					marked=()
+					marked_order=()
+					selected=0
+					viewport_start=0
+				else
+					status_msg="Deletion cancelled"
+				fi
+				need_relist=1
+				delete_prompt_active=0
 				return 0
 				;;
 			$'\n'|$'\r')
@@ -1206,6 +1236,8 @@ nav() {
 }
 
 cpal() {
+	# Internal helpers are removed once cpal returns
+	trap 'unset -f _cpal_build_order _cpal_copy _cpal_make_code _cpal_update_style_name _cpal_cleanup _cpal_draw draw_swatch; trap - RETURN' RETURN
 	local selected_color=-1
 	local key sequence sequence_part button x y row column color ansi_code copy_status
 	local block_row block_column cube_row cube_column style_changed
