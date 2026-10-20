@@ -84,6 +84,28 @@ _fdata_protected() {
     [[ -z $REPLY && ! -w ${parent:-/} ]] && REPLY="no write permission"
 }
 
+# Sets REPLY to the reason a path is recommended for deletion (regenerated or leftover), empty otherwise
+_fdata_safe() {
+    local p=$1 n=${1##*/} parent=${1%/*}
+    REPLY=""
+    case $n in
+        .cache|.npm|.thumbnails)
+            [[ $parent == "$HOME" ]] && REPLY="cache, rebuilt when needed" ;;
+        __pycache__|.mypy_cache|.pytest_cache|.ruff_cache|.parcel-cache|.turbo)
+            REPLY="build cache, rebuilt when needed" ;;
+        node_modules)
+            REPLY="dependencies, npm install brings them back" ;;
+        .venv|venv)
+            [[ -f $p/pyvenv.cfg ]] && REPLY="python venv, can be recreated" ;;
+        a.out|*.o|*.pyc|vgcore.*|core.[0-9]*)
+            [[ -f $p ]] && REPLY="build / crash leftover" ;;
+        Trash)
+            [[ $parent == */.local/share ]] && REPLY="trash, already deleted files" ;;
+        Cache|cache|"Code Cache"|GPUCache|CachedData|ShaderCache|GrShaderCache|DawnCache|"Service Worker")
+            [[ $p == "$HOME"/.config/* || $p == "$HOME"/.var/* || $p == "$HOME"/.local/* ]] && REPLY="app cache, rebuilt when needed" ;;
+    esac
+}
+
 unalias fdata 2>/dev/null
 fdata() {
     local dir
@@ -94,8 +116,8 @@ fdata() {
     local BG=$'\e[48;5;237m'
 
     local -A cache=()
-    local -a paths=() sizes=() isdir=() prot=() marked=() targets=()
-    local n=0 cur=0 top=0 total=0 reload=1 from="" keep=0 note=""
+    local -a paths=() sizes=() isdir=() prot=() safe=() marked=() targets=()
+    local n=0 cur=0 top=0 total=0 freeable=0 reload=1 from="" keep=0 note=""
     local k rest i c cols rows vis end line bg ptr box flag col name maxw hs bf be f v txt fill rule old pill shown kb p key sum np ans fail frame
 
     old=$(stty -g); stty -echo -isig
@@ -110,13 +132,21 @@ fdata() {
                 printf '\e[H\e[J %s%sfdata%s  %sscanning %s …%s' "$B" "$CYN" "$R" "$D" "$dir" "$R"
                 cache[$dir]=$(du -akx -d 1 -- "$dir" 2>/dev/null | sort -nr)
             fi
-            paths=(); sizes=(); isdir=(); prot=(); marked=(); total=0
+            paths=(); sizes=(); isdir=(); prot=(); safe=(); marked=(); total=0; freeable=0
             while IFS=$'\t' read -r kb p; do
                 [[ -z $p ]] && continue
                 if [[ $p == "$dir" ]]; then total=$kb; continue; fi
                 paths+=("$p"); sizes+=("$kb"); marked+=(0)
                 if [[ -d $p && ! -L $p ]]; then isdir+=(1); else isdir+=(0); fi
-                _fdata_protected "$p"; prot+=("$REPLY")
+                _fdata_protected "$p"; txt=$REPLY
+                # Only plain or hidden-config items can be recommended, keys/repos/foreign files never are
+                if [[ -z $txt || $txt == "hidden config" ]]; then
+                    _fdata_safe "$p"
+                    [[ -n $REPLY ]] && { txt=""; (( freeable += kb )); }
+                else
+                    REPLY=""
+                fi
+                prot+=("$txt"); safe+=("$REPLY")
             done <<< "${cache[$dir]}"
             n=${#paths[@]}; cur=$keep; top=0
             if [[ -n $from ]]; then
@@ -137,9 +167,11 @@ fdata() {
         frame=$'\e[H'
         pill=$'\e[30;46m DISK \e[0m'
         shown=$dir; [[ $shown == "$HOME"* ]] && shown="~${shown#"$HOME"}"
+        _fdata_hs "$freeable"; hs=""; (( freeable )) && hs=" · $REPLY freeable"
         _fdata_hs "$total"
-        txt="$REPLY · $n items · $c marked"
-        (( 23 + 10 + ${#txt} > cols )) && txt="$REPLY · $c marked"
+        txt="$REPLY$hs · $n items · $c marked"
+        (( 23 + 10 + ${#txt} > cols )) && txt="$REPLY$hs · $c marked"
+        (( 23 + 10 + ${#txt} > cols )) && txt="$REPLY$hs"
         (( 23 + 10 + ${#txt} > cols )) && txt=$REPLY
         v=$(( cols - 23 - ${#txt} )); (( v < 10 )) && v=10
         (( ${#shown} > v )) && shown="…${shown: -v+1}"
@@ -153,7 +185,9 @@ fdata() {
             bg=""; ptr=" "
             (( i == cur )) && { bg=$BG; ptr="${CYN}▌"; }
             if (( marked[i] )); then box="${RED}●"; else box="${D}○"; fi
-            if [[ -n ${prot[i]} ]]; then flag="${RED}${B}!"; else flag=" "; fi
+            if [[ -n ${prot[i]} ]]; then flag="${RED}${B}!"
+            elif [[ -n ${safe[i]} ]]; then flag="${GRN}${B}✓"
+            else flag=" "; fi
             if (( sizes[i] >= 1048576 )); then col="${YEL}${B}"
             elif (( sizes[i] >= 102400 )); then col=$YEL
             else col=$D; fi
@@ -165,6 +199,7 @@ fdata() {
             name=${paths[i]##*/}
             (( ${#name} > maxw )) && name="${name:0:maxw-1}…"
             if [[ -n ${prot[i]} ]]; then name="${RED}${name}"
+            elif [[ -n ${safe[i]} ]]; then name="${GRN}${name}"
             elif (( isdir[i] )); then name="${BLU}${B}${name}"; fi
             (( isdir[i] )) && name+="/"
             frame+="${bg} ${ptr}${R}${bg} ${box}${R}${bg} ${flag}${R}${bg} ${col}${hs}${R}${bg}  ${col}${bf}${R}${bg}${D}${be}${R}${bg}  ${name}"$'\e[K'"${R}"$'\n'
@@ -187,10 +222,13 @@ fdata() {
         if (( n > 0 )); then
             shown=${paths[cur]}; [[ $shown == "$HOME"* ]] && shown="~${shown#"$HOME"}"
             v=$(( cols - 3 )); [[ -n ${prot[cur]} ]] && (( v -= ${#prot[cur]} + 15 ))
+            [[ -n ${safe[cur]} ]] && (( v -= ${#safe[cur]} + 20 ))
             (( v < 10 )) && v=10
             (( ${#shown} > v )) && shown="…${shown: -v+1}"
             if [[ -n ${prot[cur]} ]]; then
                 frame+=" ${D}${shown}${R}  ${RED}${B}! protected: ${prot[cur]}${R}"$'\e[K\n'
+            elif [[ -n ${safe[cur]} ]]; then
+                frame+=" ${D}${shown}${R}  ${GRN}${B}✓ safe to delete: ${safe[cur]}${R}"$'\e[K\n'
             else
                 frame+=" ${D}${shown}${R}"$'\e[K\n'
             fi
@@ -201,7 +239,7 @@ fdata() {
         elif [[ -n $note ]]; then frame+=" ${YEL}⚠ ${note}${R}"$'\e[K\n'; else frame+=$'\e[K\n'; fi
         # Key help: drop hints that do not fit so the line never wraps, "q quit" always stays
         v=10
-        for key in "↑↓ move" "d delete" "space mark" "→ open" "← back" "a all" "r rescan"; do
+        for key in "↑↓ move" "d delete" "space mark" "s safe" "→ open" "← back" "a all" "r rescan"; do
             (( v + ${#key} + 2 > cols )) && break
             frame+=" ${B}${key%% *}${R}${D} ${key#* }${R} "; (( v += ${#key} + 2 ))
         done
@@ -227,6 +265,11 @@ fdata() {
             " ")    (( n > 0 )) && { marked[cur]=$(( 1 - marked[cur] )); (( cur < n - 1 )) && (( cur++ )); } ;;
             a)      v=1; (( c == n )) && v=0
                     for (( i = 0; i < n; i++ )); do marked[i]=$v; done ;;
+            s)      # Mark every recommended item, or unmark them if they already all are
+                    v=0
+                    for (( i = 0; i < n; i++ )); do [[ -n ${safe[i]} ]] && (( ! marked[i] )) && v=1; done
+                    for (( i = 0; i < n; i++ )); do [[ -n ${safe[i]} ]] && marked[i]=$v; done
+                    (( freeable )) || note="nothing recommended to delete here" ;;
             RIGHT|l|"")
                     if (( n > 0 && isdir[cur] )); then dir=${paths[cur]}; reload=1
                     elif (( n > 0 )); then note="${paths[cur]##*/} is not a directory"; fi ;;
