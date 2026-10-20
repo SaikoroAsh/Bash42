@@ -8,7 +8,8 @@ gg()
         else
                 for arg in "$@"
                 do
-                        find . -name "*.$arg" -exec git add {} +
+                        # Git pathspec: matches at any depth and also stages deleted files
+                        git add -- "*.$arg"
                 done
                 git commit
         fi
@@ -27,16 +28,10 @@ alias gu="git add -u"
 alias gs="git status"
 
 
-alias gpom="git push origin main"
-
-
 alias gp="git push"
 
 
 alias gc="git clone"
-
-
-alias gb="git branch"
 
 
 alias gav="git branch -av"
@@ -63,19 +58,34 @@ gcd()
 
 gd()
 {
-	git commit -m "$1"
-	git push
+	if [[ -z $1 ]]; then
+		echo -e '\033[31mPlease specify a commit message.\033[0m'
+		return 1
+	fi
+	git commit -m "$1" && git push
 }
 
 
 gre()
 {
-	git remote remove origin && echo "Old remote deleted" || echo "Error: Suppression remote"
-	git remote add origin "$1" && echo "New remote added" || echo "Error: Add remote"
-	git push --set-upstream origin main && echo "Push done" || echo "Error: Push"
+	if [[ -z $1 ]]; then
+		echo -e '\033[31mPlease specify the new remote URL.\033[0m'
+		return 1
+	fi
+	git rev-parse --is-inside-work-tree &>/dev/null || { echo "not a git repo"; return 1; }
+	# Check the new remote before touching the current one, so a typo never leaves the repo without origin
+	git ls-remote "$1" &>/dev/null || { echo -e "\033[31mError: cannot reach $1\033[0m"; return 1; }
+	if git remote get-url origin &>/dev/null; then
+		git remote set-url origin "$1" && echo "Remote updated" || { echo "Error: Update remote"; return 1; }
+	else
+		git remote add origin "$1" && echo "New remote added" || { echo "Error: Add remote"; return 1; }
+	fi
+	git push --set-upstream origin "$(git branch --show-current)" && echo "Push done" || echo "Error: Push"
 }
 
 gbr() {
+    # Internal helpers are removed once gbr returns
+    trap 'unset -f _gbr_rebuild_display _gbr_emit; trap - RETURN' RETURN
     git rev-parse --is-inside-work-tree &>/dev/null || { echo "gbr: not a git repository" >&2; return 1; }
 
     local -a branches
@@ -474,22 +484,50 @@ gsc() {
 
 grc() {
     git rev-parse --is-inside-work-tree &>/dev/null || { echo "not a git repo"; return 1; }
+    # Internal helpers are removed once grc returns
+    trap 'unset -f _grc_load _grc_reword; trap - RETURN' RETURN
 
     local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m'
     local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' CYN=$'\e[36m'
     local BG=$'\e[48;5;237m'
 
     local -a hashes=() dates=() authors=() bodies=()
-    local h a d m
-    while IFS=$'\x1f' read -r -d $'\x1e' h a d m; do
-        h=${h#$'\n'}
-        hashes+=("$h"); authors+=("$a"); dates+=("$d"); bodies+=("$m")
-    done < <(git log --format='%h%x1f%an%x1f%ar%x1f%B%x1e' 2>/dev/null)
+    local n=0
+    _grc_load() {
+        hashes=(); dates=(); authors=(); bodies=()
+        local h a d m
+        while IFS=$'\x1f' read -r -d $'\x1e' h a d m; do
+            h=${h#$'\n'}
+            hashes+=("$h"); authors+=("$a"); dates+=("$d"); bodies+=("$m")
+        done < <(git log --format='%h%x1f%an%x1f%ar%x1f%B%x1e' 2>/dev/null)
+        n=${#hashes[@]}
+    }
 
-    local n=${#hashes[@]}
+    # Replace the message of commit number $1 with $2: amend for HEAD, otherwise
+    # a rebase that only rewords that commit (tree and other commits stay the same)
+    _grc_reword() {
+        local tmp short=${hashes[$1]} rc base
+        tmp=$(mktemp) || return 1
+        printf '%s\n' "$2" > "$tmp"
+        if (( $1 == 0 )); then
+            # --only without paths: staged changes are not added to the amended commit
+            git commit -q --amend --only --cleanup=whitespace -F "$tmp" >/dev/null 2>&1
+            rc=$?
+        else
+            if git rev-parse -q --verify "$short^" >/dev/null; then base="$short^"; else base="--root"; fi
+            GIT_SEQUENCE_EDITOR="sed -i 's/^pick $short\([0-9a-f]*\) /reword $short\1 /'" GIT_EDITOR="cp '$tmp'" \
+                git -c commit.cleanup=whitespace rebase -q -i --autostash --rebase-merges $base >/dev/null 2>&1
+            rc=$?
+            (( rc )) && git rebase --abort >/dev/null 2>&1
+        fi
+        rm -f -- "$tmp"
+        return $rc
+    }
+
+    _grc_load
     (( n == 0 )) && { echo "no commits yet"; return 0; }
 
-    local cur=0 top=0 go=0 note="" cached=-1 cached_w=0
+    local cur=0 top=0 go=0 note="" ok=0 cached=-1 cached_w=0 pushed=0 pending="" full orig tmp editor
     local k rest i idx end cols rows vis left_w right_w rule txt fill bg ptr box line old branch pill
     local -a msg_lines=()
     branch=$(git branch --show-current)
@@ -506,9 +544,13 @@ grc() {
         end=$(( top + vis )); (( end > n )) && end=$n
 
         if (( cached != cur || cached_w != right_w )); then
-            msg_lines=("${B}${authors[cur]}${R}  ${D}${dates[cur]}${R}" "")
+            if [[ -n $pending ]]; then
+                msg_lines=("${YEL}${B}new message${R}" ""); txt=$pending
+            else
+                msg_lines=("${B}${authors[cur]}${R}  ${D}${dates[cur]}${R}" ""); txt=${bodies[cur]}
+            fi
             while IFS= read -r line; do msg_lines+=("$line"); done \
-                < <(printf '%s\n' "${bodies[cur]}" | fold -sw "$(( right_w - 1 ))")
+                < <(printf '%s\n' "$txt" | fold -sw "$(( right_w - 1 ))")
             cached=$cur; cached_w=$right_w
         fi
 
@@ -546,12 +588,20 @@ grc() {
         else
             printf ' %s%s%s\n' "$D" "$rule" "$R"
         fi
-        if [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
-        printf ' %s↑↓%s%s move%s  %senter%s%s revert to commit%s  %sq%s%s quit%s' \
-            "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R"
+        if (( ok )); then printf ' %s✓ %s%s\n' "$GRN" "$note" "$R"
+        elif [[ -n $note ]]; then printf ' %s⚠ %s%s\n' "$YEL" "$note" "$R"; else echo; fi
+        if [[ -n $pending ]] && (( pushed )); then
+            printf ' \e[30;45m REWORD \e[0m %s%salready pushed%s, a force push will be needed. Save the new message? %s(y/n)%s ' \
+                "$RED" "$B" "$R" "$B" "$R"
+        elif [[ -n $pending ]]; then
+            printf ' \e[30;45m REWORD \e[0m Save the new message of %s? %s(y/n)%s ' "${hashes[cur]}" "$B" "$R"
+        else
+            printf ' %s↑↓%s%s move%s  %senter%s%s revert to commit%s  %se%s%s edit message%s  %sq%s%s quit%s' \
+                "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R" "$B" "$R" "$D" "$R"
+        fi
 
         IFS= read -rsn1 k
-        note=""
+        note=""; ok=0
         if [[ $k == $'\e' ]]; then
             rest=""; IFS= read -rsn2 -t 0.05 rest
             case $rest in
@@ -563,12 +613,55 @@ grc() {
             esac
         fi
 
+        if [[ -n $pending ]]; then
+            if [[ $k == [yYoO] ]]; then
+                if _grc_reword "$cur" "$pending"; then
+                    _grc_load; ok=1
+                    note="message changed"
+                    (( pushed )) && note+=", push it with: git push --force-with-lease"
+                else
+                    note="could not change the message, nothing changed"
+                fi
+            else
+                note="edit cancelled"
+            fi
+            pending=""; cached=-1
+            continue
+        fi
+
         case $k in
             UP|k)   (( cur > 0 )) && (( cur-- )) ;;
             DOWN|j) (( cur < n - 1 )) && (( cur++ )) ;;
             PGUP)   (( cur -= vis )); (( cur < 0 )) && cur=0 ;;
             PGDN)   (( cur += vis )); (( cur > n - 1 )) && cur=$(( n - 1 )) ;;
             q|ESC|$'\x03') break ;;
+            e)
+                if [[ -d $(git rev-parse --git-path rebase-merge) || -d $(git rev-parse --git-path rebase-apply) ]]; then
+                    note="a rebase is already in progress, finish it first"; continue
+                fi
+                if (( cur > 0 )) && git rev-parse -q --verify "${hashes[cur]}^2" >/dev/null; then
+                    note="merge commits can only be edited when they are the last commit"; continue
+                fi
+                # Edit the whole message in git's editor (core.editor, $VISUAL, $EDITOR or vi)
+                tmp=$(mktemp) || { note="could not create a temporary file"; continue; }
+                printf '%s\n' "${bodies[cur]}" > "$tmp"
+                printf '\n# Edit the message of %s. Lines starting with # are ignored,\n# an empty message cancels the edit.\n' \
+                    "${hashes[cur]}" >> "$tmp"
+                editor=$(git var GIT_EDITOR)
+                # Leave the alternate screen so the editor gets a normal terminal, then come back
+                tput rmcup; tput cnorm; stty "$old"
+                eval "$editor \"\$tmp\""
+                stty -echo -isig; tput smcup; tput civis
+                full=$(grep -v '^#' "$tmp"); rm -f -- "$tmp"
+                orig=$(printf '%s' "${bodies[cur]}")
+                if [[ -z ${full//[[:space:]]/} ]]; then note="edit cancelled (empty message)"; continue; fi
+                if [[ $full == "$orig" ]]; then note="message unchanged"; continue; fi
+                # A commit that is already on the upstream branch needs a force push afterwards
+                pushed=0
+                git merge-base --is-ancestor "${hashes[cur]}" '@{u}' 2>/dev/null && pushed=1
+                # The new message is shown on the right and confirmed on the next key
+                pending=$full; cached=-1
+                ;;
             "")
                 if (( cur == 0 )); then note="already at this commit (HEAD)"; continue; fi
                 tput cup $(( rows - 1 )) 0; tput el

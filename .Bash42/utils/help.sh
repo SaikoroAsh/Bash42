@@ -36,7 +36,6 @@ _help42_plain()
     echo "  ║                                                                          ║"
     echo -e "  ║   ${CYANB} p   :${WHITE} Execute with python3${CYAN}                                            ║"
     echo -e "  ║   ${CYANB} ffp :${WHITE} Check .py with mypy and flake8${CYAN}                                  ║"
-    echo -e "  ║   ${CYANB} pcc :${WHITE} Remove Python cache dirs (arg: path, -n dry-run)${CYAN}                ║"
     echo -e "  ║   ${CYANB} cve :${WHITE} Creates a venv (arg 1 = name)${CYAN}                                   ║"
     echo -e "  ║   ${CYANB} on  :${WHITE} Sources venv (arg 1 = name)${CYAN}                                     ║"
     echo -e "  ║   ${CYANB} off :${WHITE} Deactivates venv${CYAN}                                                ║"
@@ -50,16 +49,14 @@ _help42_plain()
     echo -e "  ║   ${CYANB} gaa  :${WHITE} Run git add --all${CYAN}                                              ║"
     echo -e "  ║   ${CYANB} gu   :${WHITE} Add all modified files${CYAN}                                         ║"
     echo -e "  ║   ${CYANB} gs   :${WHITE} Run git status${CYAN}                                                 ║"
-    echo -e "  ║   ${CYANB} gpom :${WHITE} Run git push on the main branch${CYAN}                                ║"
     echo -e "  ║   ${CYANB} gp   :${WHITE} Run git push on the actual branch${CYAN}                              ║"
     echo -e "  ║   ${CYANB} gc   :${WHITE} Run git clone${CYAN}                                                  ║"
     echo -e "  ║   ${CYANB} gcd  :${WHITE} Git clone and go to the directory created${CYAN}                      ║"
     echo -e "  ║   ${CYANB} gd   :${WHITE} Commit to your git repo and pushes it directly${CYAN}                 ║"
     echo -e "  ║   ${CYANB} gsc  :${WHITE} Select files, enter a message, commit and push${CYAN} ${NEW}           ║"
-    echo -e "  ║   ${CYANB} grc  :${WHITE} Browse commits and revert back to the selected one${CYAN} ${NEW}       ║"
+    echo -e "  ║   ${CYANB} grc  :${WHITE} Revert to a commit or edit a commit message${CYAN} ${NEW}              ║"
     echo -e "  ║   ${CYANB} gcp  :${WHITE} Pick commits from another branch and cherry-pick them${CYAN} ${NEW}    ║"
     echo -e "  ║   ${CYANB} gre  :${WHITE} Relink your local repo to a a new remote${CYAN}                       ║"
-    echo -e "  ║   ${CYANB} gb   :${WHITE} Run git branch${CYAN}                                                 ║"
     echo -e "  ║   ${CYANB} gbr  :${WHITE} Interface your git branches${CYAN} ${UPDATED}                          ║"
     echo -e "  ║   ${CYANB} gbc  :${WHITE} Creates a new branch${CYAN} ${NEW}                                     ║"
     echo -e "  ║   ${CYANB} gav  :${WHITE} Show local and remote branches with last commit${CYAN} ${NEW}          ║"
@@ -77,7 +74,7 @@ _help42_plain()
     echo -e "  ║   ${CYANB} fm   :${WHITE} Opens a new file manager windows for the given path${CYAN} ${NEW}      ║"
     echo -e "  ║   ${CYANB} hub  :${WHITE} Open hub links for 42 websites ${CYAN} ${NEW}                          ║"
     echo -e "  ║   ${CYANB} vsc  :${WHITE} Opens vscode for the given path${CYAN} ${NEW}                          ║"
-    echo -e "  ║   ${CYANB} cln  :${WHITE} Removes a.out files, __pycache__, and .mypy_cache dirs.${CYAN} ${NEW}  ║"
+    echo -e "  ║   ${CYANB} cln  :${WHITE} Remove build/cache leftovers (-n preview, -v venvs)${CYAN} ${NEW}      ║"
     echo -e "  ║   ${CYANB}    -v / -venv :${WHITE} this flag remove the venv as well ${CYAN} ${NEW}              ║"
 
     echo -e "  ║                                                                          ║"
@@ -111,7 +108,6 @@ _help42_load_entries()
         "rv|Run review preparation checks|Runs the checks commonly used before a 42 review: compile, sanitize, and inspect the project state to catch obvious errors early."
         "p|Run a Python file with Python 3|Execute the current Python script with python3. This is the default quick test command for small scripts and project entry points."
         "ffp|Check Python files with mypy and flake8|Validate Python code with the static tools used in Bash42. It helps catch type issues and style violations before finalizing work."
-        "pcc|Remove Python cache directories|Delete __pycache__ and .mypy_cache folders under the selected path. Use -n or --dry-run to preview matches without deleting anything."
         "cve|Create a Python virtual environment|Create a local venv in the current directory or in a target path, so dependencies stay isolated from the system Python."
         "on|Activate a Python virtual environment|Source a venv so your shell uses the project-specific Python environment and installed packages."
         "off|Deactivate the active virtual environment|Return the shell to the system Python environment after you are done working in the project virtualenv."
@@ -120,16 +116,14 @@ _help42_load_entries()
         "gaa|Stage all changes|Add all tracked and untracked modifications with git add --all so the working tree is fully staged for a commit."
         "gu|Stage modified and deleted tracked files|Stage updates and removals for tracked files without adding new untracked items. Useful for a focused save before a commit."
         "gs|Show repository status|Display the current branch, tracked changes, staged files, and untracked files so you know exactly what is pending."
-        "gpom|Push the main branch to origin|Quickly push the main branch to the default remote, useful when your project workflow keeps main as the public branch."
         "gp|Push the current branch|Push the branch currently checked out, without forcing the branch name to main. This is the default branch-safe push command."
         "gc|Clone a Git repository|Clone a remote repository and keep the standard workflow short and predictable. Useful when you want to start from an existing project quickly."
         "gcd|Clone a repo and enter it|Clone a repository and immediately move into the created directory, reducing the setup steps between cloning and editing."
         "gd|Commit and push directly|Create a commit with the given message and immediately push it upstream. Good for quick save-and-sync work."
         "gsc|Interactive commit helper|Select files, write a commit message, and push from a full-screen Bash UI. This is the guided git workflow for people who prefer a menu over raw Git commands."
-        "grc|Revert back to a commit|Browse the commit history in a full-screen UI, with the full commit message shown on the right. Press enter on a commit and confirm to undo every commit made after it with git revert, in a single new commit. History is kept, nothing is force-pushed."
+        "grc|Revert to a commit or edit its message|Browse the commit history in a full-screen UI, with the full commit message shown on the right. Press enter on a commit and confirm to undo every commit made after it with git revert, in a single new commit. History is kept, nothing is force-pushed. Press e to edit the whole message of the selected commit in your git editor (core.editor, $EDITOR or vi), check the new message on the right and confirm: the last commit is amended, older ones are reworded with an automatic rebase, and grc warns you when the commit is already pushed and needs a force push."
         "gcp|Cherry-pick commits from another branch|Browse the commits of another branch that are not on yours yet, with the full message on the right. Switch the source branch with left/right, toggle commits with space, then press enter and confirm to cherry-pick them (oldest first) onto your current branch."
-        "gre|Relink a repo to a new remote|Remove the old origin and add a new one, then set upstream on the main branch so the repo points to the correct remote."
-        "gb|List branches|Display the branch list for the current repository so you can keep track of your local environment."
+        "gre|Relink a repo to a new remote|Point origin to the given URL (checked first, so a typo never leaves the repo without a remote), then push the current branch and set it as upstream."
         "gbr|Browse and manage branches|Open a full-screen branch browser to move around local branches, inspect their state, merge them, or delete them safely."
         "gbc|Create and switch to a new branch|Create a new locally named branch and immediately check it out so the next work happens in the correct context."
         "gav|Show local and remote branch activity|List branches together with recent commit info, which helps spot what is stale or recently changed."
@@ -142,8 +136,8 @@ _help42_load_entries()
         "fdata|Browse disk usage and free space|Open a full-screen disk usage browser (home by default, or the given path) with entries sorted by size. Move with up/down, open folders with right/enter and go back with left. Mark items with space (a for all) and press d to delete them after a y/n confirmation. Items recommended for deletion (caches, build leftovers, node_modules, python venvs, trash) are shown in green with a ✓ and s marks them all at once. Important items (keys, configs, git repos, personal folders, anything outside your home) are flagged with a red ! and require typing yes before they are deleted."
         "fm|Open a file manager window|Launch a graphical file manager on the selected path so you can interact visually. This is handy when you want a quick visual browser."
         "hub|Browse 42 links|Open the main 42 websites and dashboards from a command-line menu, saving you from remembering each URL."
-        "vsc|Open the current directory in VS Code|Launch VS Code from the command line so the project opens directly in your editor without a manual path selection."
-        "cln|Remove build and cache artifacts|Delete generated binaries, Python caches, and related temporary files to keep the project tree clean. Add -v or -venv to also remove virtual environments."
+        "vsc|Open a folder in VS Code|Launch VS Code on the given path, or on the current directory when no path is given."
+        "cln|Remove build and cache artifacts|Delete a.out, *.o, *.pyc, crash dumps and Python/JS build caches under the given path (current directory by default), using the same safe-to-delete rules as fdata. Add -n to preview without deleting, -v to also remove Python venvs and node_modules."
         "help42|Browse Bash42 commands and guides|Open the interactive Bash42 help browser. It is the guided way to explore commands and their usage without scanning the whole file manually."
         "b42|Update Bash42|Download the latest version of the Bash42 configuration and reload it in the current shell context."
         "max42|Enable the large welcome banner|Turn on the expanded welcome display when you want the full Bash42 intro to appear at shell startup."
@@ -157,8 +151,8 @@ _help42_load_entries()
         IFS='|' read -r name short guide <<< "$item"
         case $name in
             ccw|ff|v|vh|a|rv) category='C Editor & Compilation' ;;
-            p|ffp|pcc|cve|on|off) category='Python' ;;
-            gg|ga|gaa|gu|gs|gpom|gp|gc|gcd |gd|gsc|grc|gcp|gre|gb|gbr|gbc|gav|grpo|grv) category='Git' ;;
+            p|ffp|cve|on|off) category='Python' ;;
+            gg|ga|gaa|gu|gs|gp|gc|gcd|gd|gsc|grc|gcp|gre|gbr|gbc|gav|grpo|grv) category='Git' ;;
             nav|cpal|iph|mask|fdata|fm|hub|vsc|cln) category='Terminal and Tools' ;;
             *) category='Bash42' ;;
         esac
@@ -336,26 +330,5 @@ help42()
     fi
 
     _help42_interactive
-}
-
-# Remove Python caches: __pycache__ and .mypy_cache
-pcc()
-{
-    local dry=0
-    local path="."
-    if [ "$1" = "-n" ] || [ "$1" = "--dry-run" ]; then
-        dry=1
-        shift
-    fi
-    if [ -n "$1" ]; then
-        path="$1"
-    fi
-    if [ "$dry" -eq 1 ]; then
-        find "$path" -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -print
-        return
-    fi
-    # Delete matched directories safely using null delimiters
-    find "$path" -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -print0 | xargs -0 -r rm -rf --
-    echo "Removed Python cache directories under: $path"
 }
 
