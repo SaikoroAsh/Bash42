@@ -1,5 +1,14 @@
 [
     {
+        "version": "2.6.0",
+        "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.6.0/Bash42.zip",
+        "sha256": "1c532a812bc25fc7528d6228df3f86d873ab2899a0d236999c968931adc52cbb",
+        "changelog": [
+            "Updated: grc (edit commit messages), fdata (disk usage browser), cln, gre, gd, rv",
+            "Removed: pcc (merged into cln), gpom, gb"
+        ]
+    },
+    {
         "version": "2.5.0",
         "download_url": "https://github.com/SaikoroAsh/Bash42/releases/download/v2.5.0/Bash42.zip",
         "sha256": "beba06d42e8f332a68c64c380487812160bd1c6fbbf74e24f4cd55b55f6e5276",
