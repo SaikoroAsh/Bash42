@@ -49,8 +49,6 @@ alias grpo="git remote prune origin"
 
 alias grv="git remote -v"
 
-alias fdata='du -h /home/$USER | sort -hr | head -20'
-
 gcd()
 {
 	    if [[ $# == 1 ]]; then

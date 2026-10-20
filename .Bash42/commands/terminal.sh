@@ -53,6 +53,234 @@ fm() {
     esac
 }
 
+# fdata: gsc-like disk usage browser, delete heavy files and folders
+_fdata_hs() {
+    local k=$1
+    if (( k < 1024 )); then REPLY="${k}K"
+    elif (( k < 1048576 )); then REPLY="$(( k / 1024 )).$(( k * 10 / 1024 % 10 ))M"
+    elif (( k < 1073741824 )); then REPLY="$(( k / 1048576 )).$(( k * 10 / 1048576 % 10 ))G"
+    else REPLY="$(( k / 1073741824 )).$(( k * 10 / 1073741824 % 10 ))T"; fi
+}
+
+# Sets REPLY to the reason a path is protected, empty if it is safe to delete
+_fdata_protected() {
+    local p=$1 n=${1##*/} parent=${1%/*}
+    REPLY=""
+    case $n in
+        .ssh|.gnupg|.pki|.password-store|keyrings|*.pem|*.key|*.p12|*.kdbx|id_rsa*|id_ed25519*|id_ecdsa*|.env|.env.*)
+            REPLY="keys / credentials" ;;
+        .bashrc|.bash_profile|.profile|.zshrc|.bash42|.Bash42|.gitconfig|.vimrc)
+            REPLY="shell / tool config" ;;
+        .config|.local|.mozilla|.thunderbird|.var)
+            REPLY="application data" ;;
+        .git)
+            REPLY="git history" ;;
+        Documents|Desktop|Pictures|Music|Videos)
+            [[ $parent == "$HOME" ]] && REPLY="personal folder" ;;
+    esac
+    [[ -z $REPLY && -d $p/.git ]] && REPLY="git repository"
+    [[ -z $REPLY && $p != "$HOME"/* ]] && REPLY="outside your home"
+    [[ -z $REPLY && $parent == "$HOME" && $n == .* && $n != .cache ]] && REPLY="hidden config"
+    [[ -z $REPLY && ! -w ${parent:-/} ]] && REPLY="no write permission"
+}
+
+unalias fdata 2>/dev/null
+fdata() {
+    local dir
+    dir=$(cd -- "${1:-$HOME}" 2>/dev/null && pwd -P) || { echo "fdata: no such directory: $1"; return 1; }
+
+    local R=$'\e[0m' B=$'\e[1m' D=$'\e[2m'
+    local RED=$'\e[31m' GRN=$'\e[32m' YEL=$'\e[33m' BLU=$'\e[34m' CYN=$'\e[36m'
+    local BG=$'\e[48;5;237m'
+
+    local -A cache=()
+    local -a paths=() sizes=() isdir=() prot=() marked=() targets=()
+    local n=0 cur=0 top=0 total=0 reload=1 from="" keep=0 note=""
+    local k rest i c cols rows vis end line bg ptr box flag col name maxw hs bf be f v txt fill rule old pill shown kb p key sum np ans fail frame
+
+    old=$(stty -g); stty -echo -isig
+    tput smcup; tput civis
+    printf '\e[?7l'
+
+    while true; do
+        cols=$(tput cols); rows=$(tput lines)
+
+        if (( reload )); then
+            if [[ -z ${cache[$dir]+x} ]]; then
+                printf '\e[H\e[J %s%sfdata%s  %sscanning %s …%s' "$B" "$CYN" "$R" "$D" "$dir" "$R"
+                cache[$dir]=$(du -akx -d 1 -- "$dir" 2>/dev/null | sort -nr)
+            fi
+            paths=(); sizes=(); isdir=(); prot=(); marked=(); total=0
+            while IFS=$'\t' read -r kb p; do
+                [[ -z $p ]] && continue
+                if [[ $p == "$dir" ]]; then total=$kb; continue; fi
+                paths+=("$p"); sizes+=("$kb"); marked+=(0)
+                if [[ -d $p && ! -L $p ]]; then isdir+=(1); else isdir+=(0); fi
+                _fdata_protected "$p"; prot+=("$REPLY")
+            done <<< "${cache[$dir]}"
+            n=${#paths[@]}; cur=$keep; top=0
+            if [[ -n $from ]]; then
+                for i in "${!paths[@]}"; do [[ ${paths[i]} == "$from" ]] && cur=$i; done
+            fi
+            (( cur >= n )) && cur=$(( n - 1 )); (( cur < 0 )) && cur=0
+            reload=0; from=""; keep=0
+        fi
+
+        vis=$(( rows - 6 )); (( vis < 3 )) && vis=3
+        (( cur < top )) && top=$cur
+        (( cur >= top + vis )) && top=$(( cur - vis + 1 ))
+        end=$(( top + vis )); (( end > n )) && end=$n
+        c=0; for i in "${marked[@]}"; do (( c += i )); done
+        printf -v rule '%*s' $(( cols - 2 )) ''; rule=${rule// /─}
+
+        # The whole frame is built in memory and written in one go to avoid flickering
+        frame=$'\e[H'
+        pill=$'\e[30;46m DISK \e[0m'
+        shown=$dir; [[ $shown == "$HOME"* ]] && shown="~${shown#"$HOME"}"
+        _fdata_hs "$total"
+        txt="$REPLY · $n items · $c marked"
+        (( 23 + 10 + ${#txt} > cols )) && txt="$REPLY · $c marked"
+        (( 23 + 10 + ${#txt} > cols )) && txt=$REPLY
+        v=$(( cols - 23 - ${#txt} )); (( v < 10 )) && v=10
+        (( ${#shown} > v )) && shown="…${shown: -v+1}"
+        printf -v line ' %s%sfdata%s  %s▤%s %s%s%s   %s   %s%s%s\e[K\n' \
+            "$B" "$CYN" "$R" "$D" "$R" "$B" "$shown" "$R" "$pill" "$D" "$txt" "$R"
+        frame+=$line
+        frame+=" ${D}${rule}${R}"$'\e[K\n'
+
+        maxw=$(( cols - 32 )); (( maxw < 8 )) && maxw=8
+        for (( i = top; i < end; i++ )); do
+            bg=""; ptr=" "
+            (( i == cur )) && { bg=$BG; ptr="${CYN}▌"; }
+            if (( marked[i] )); then box="${RED}●"; else box="${D}○"; fi
+            if [[ -n ${prot[i]} ]]; then flag="${RED}${B}!"; else flag=" "; fi
+            if (( sizes[i] >= 1048576 )); then col="${YEL}${B}"
+            elif (( sizes[i] >= 102400 )); then col=$YEL
+            else col=$D; fi
+            _fdata_hs "${sizes[i]}"; printf -v hs '%6s' "$REPLY"
+            f=0; (( sizes[0] > 0 )) && f=$(( sizes[i] * 10 / sizes[0] ))
+            (( f == 0 && sizes[i] > 0 )) && f=1
+            printf -v bf '%*s' "$f" ''; bf=${bf// /━}
+            printf -v be '%*s' $(( 10 - f )) ''; be=${be// /─}
+            name=${paths[i]##*/}
+            (( ${#name} > maxw )) && name="${name:0:maxw-1}…"
+            if [[ -n ${prot[i]} ]]; then name="${RED}${name}"
+            elif (( isdir[i] )); then name="${BLU}${B}${name}"; fi
+            (( isdir[i] )) && name+="/"
+            frame+="${bg} ${ptr}${R}${bg} ${box}${R}${bg} ${flag}${R}${bg} ${col}${hs}${R}${bg}  ${col}${bf}${R}${bg}${D}${be}${R}${bg}  ${name}"$'\e[K'"${R}"$'\n'
+        done
+        (( n == 0 )) && { frame+="   ${D}(empty directory)${R}"$'\e[K\n'; (( end++ )); }
+        for (( i = end - top; i < vis; i++ )); do frame+=$'\e[K\n'; done
+
+        txt=""
+        (( top > 0 )) && txt+="↑ $top more  "
+        (( end < n )) && txt+="↓ $(( n - end )) more"
+        txt=${txt%  }
+        if [[ -n $txt ]]; then
+            v=$(( cols - 6 - ${#txt} )); (( v < 0 )) && v=0
+            printf -v fill '%*s' "$v" ''; fill=${fill// /─}
+            frame+=" ${D}── ${txt} ${fill}${R}"$'\e[K\n'
+        else
+            frame+=" ${D}${rule}${R}"$'\e[K\n'
+        fi
+
+        if (( n > 0 )); then
+            shown=${paths[cur]}; [[ $shown == "$HOME"* ]] && shown="~${shown#"$HOME"}"
+            v=$(( cols - 3 )); [[ -n ${prot[cur]} ]] && (( v -= ${#prot[cur]} + 15 ))
+            (( v < 10 )) && v=10
+            (( ${#shown} > v )) && shown="…${shown: -v+1}"
+            if [[ -n ${prot[cur]} ]]; then
+                frame+=" ${D}${shown}${R}  ${RED}${B}! protected: ${prot[cur]}${R}"$'\e[K\n'
+            else
+                frame+=" ${D}${shown}${R}"$'\e[K\n'
+            fi
+        else
+            frame+=$'\e[K\n'
+        fi
+        if [[ $note == deleted* ]]; then frame+=" ${GRN}✓ ${note}${R}"$'\e[K\n'
+        elif [[ -n $note ]]; then frame+=" ${YEL}⚠ ${note}${R}"$'\e[K\n'; else frame+=$'\e[K\n'; fi
+        # Key help: drop hints that do not fit so the line never wraps, "q quit" always stays
+        v=10
+        for key in "↑↓ move" "d delete" "space mark" "→ open" "← back" "a all" "r rescan"; do
+            (( v + ${#key} + 2 > cols )) && break
+            frame+=" ${B}${key%% *}${R}${D} ${key#* }${R} "; (( v += ${#key} + 2 ))
+        done
+        frame+=" ${B}q${R}${D} quit${R}"$'\e[K\e[J'
+        printf '%s' "$frame"
+
+        IFS= read -rsn1 k
+        note=""
+        if [[ $k == $'\e' ]]; then
+            rest=""; IFS= read -rsn2 -t 0.05 rest
+            case $rest in
+                "[3") IFS= read -rsn1 -t 0.05 _; k=DEL ;;
+                "[A") k=UP ;; "[B") k=DOWN ;; "[C") k=RIGHT ;; "[D") k=LEFT ;;
+                "") k=ESC ;;
+                *) k=IGN ;;
+            esac
+        fi
+
+        case $k in
+            $'\x03'|q|ESC) break ;;
+            UP|k)   (( cur > 0 )) && (( cur-- )) ;;
+            DOWN|j) (( cur < n - 1 )) && (( cur++ )) ;;
+            " ")    (( n > 0 )) && { marked[cur]=$(( 1 - marked[cur] )); (( cur < n - 1 )) && (( cur++ )); } ;;
+            a)      v=1; (( c == n )) && v=0
+                    for (( i = 0; i < n; i++ )); do marked[i]=$v; done ;;
+            RIGHT|l|"")
+                    if (( n > 0 && isdir[cur] )); then dir=${paths[cur]}; reload=1
+                    elif (( n > 0 )); then note="${paths[cur]##*/} is not a directory"; fi ;;
+            LEFT|h|$'\x7f'|$'\b')
+                    if [[ $dir != / ]]; then
+                        from=$dir; dir=${dir%/*}; [[ -z $dir ]] && dir=/; reload=1
+                    fi ;;
+            r)      unset 'cache[$dir]'; keep=$cur; reload=1 ;;
+            d|x|DEL)
+                    (( n == 0 )) && continue
+                    targets=()
+                    for (( i = 0; i < n; i++ )); do (( marked[i] )) && targets+=("$i"); done
+                    (( ${#targets[@]} == 0 )) && targets=("$cur")
+                    sum=0; np=0
+                    for i in "${targets[@]}"; do
+                        (( sum += sizes[i] ))
+                        [[ -n ${prot[i]} ]] && (( np++ ))
+                    done
+                    _fdata_hs "$sum"
+                    if (( ${#targets[@]} == 1 )); then txt=${paths[targets[0]]##*/}; else txt="${#targets[@]} items"; fi
+                    # Prompts must fit on one line, including room for the answer
+                    v=$(( cols - 30 - ${#REPLY} )); (( np )) && (( v -= 15 ))
+                    (( v < 6 )) && v=6
+                    (( ${#txt} > v )) && txt="${txt:0:v-1}…"
+                    tput cup $(( rows - 1 )) 0; tput el
+                    if (( np )); then
+                        printf -v ans '%d protected, ' "$np"
+                        (( 48 + ${#txt} + ${#REPLY} + ${#ans} > cols )) && ans=""
+                        printf ' \e[30;41m DANGER \e[0m Delete %s (%s)? %s%s%s%stype %syes%s: ' \
+                            "$txt" "$REPLY" "$RED" "$B" "$ans" "$R" "$B" "$R"
+                        stty echo; tput cnorm
+                        IFS= read -r ans
+                        stty -echo; tput civis
+                        [[ $ans == yes ]] || { note="deletion cancelled"; continue; }
+                    else
+                        printf ' \e[30;41m DELETE \e[0m Delete %s (%s)? %s(y/n)%s ' "$txt" "$REPLY" "$B" "$R"
+                        IFS= read -rsn1 k
+                        [[ $k == [yYoO] ]] || { note="deletion cancelled"; continue; }
+                    fi
+                    fail=0
+                    for i in "${targets[@]}"; do rm -rf -- "${paths[i]}" 2>/dev/null || (( fail++ )); done
+                    for key in "${!cache[@]}"; do
+                        [[ $dir == "$key" || $dir == "$key"/* || $key == / ]] && unset 'cache[$key]'
+                    done
+                    if (( fail )); then note="$fail item(s) could not be fully deleted"
+                    else note="deleted $txt, freed $REPLY"; fi
+                    keep=$cur; reload=1 ;;
+        esac
+    done
+
+    printf '\e[?7h'
+    tput cnorm; tput rmcup; stty "$old"
+}
+
 # Hub: gsc-like full-screen links menu
 hub_ui() {
 	local labels=(
